@@ -11,10 +11,11 @@ Este fork de [diegodinizm1/qlcstream](https://github.com/diegodinizm1/qlcstream)
 - [O que mudou e o que foi validado](CHANGELOG.md)
 - [Como os downloads se comportam](docs/downloads-confiabilidade.md)
 - [Primeira execução: configuração manual atual](docs/primeira-execucao.md)
+- [Diagnóstico da pasta de mídia e limites da verificação dos volumes](docs/diagnostico-armazenamento.md)
 - [Plano de evolução: diagnóstico e configuração guiada](docs/roadmap.md)
 - [Diagnóstico das conexões: estados, limites e validação isolada](docs/diagnostico-integracoes.md)
 
-A tela de configurações testa as conexões autenticadas com TMDB, Prowlarr e qBittorrent e orienta a recuperação de falhas. A configuração guiada ainda não foi implementada.
+A tela de configurações testa as conexões autenticadas com TMDB, Prowlarr e qBittorrent e diagnostica leitura e escrita na pasta salva. Orienta a recuperação de falhas e mantém o compartilhamento físico dos volumes inconclusivo quando não há prova. A configuração guiada ainda não foi implementada.
 
 ## Estrutura
 

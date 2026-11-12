@@ -1,6 +1,6 @@
 # Diagnóstico das conexões — Issue #15
 
-Em **Configurações**, o aplicativo verifica as conexões com TMDB, Prowlarr e qBittorrent. Campos preenchidos não comprovam disponibilidade. Cada linha mostra o resultado, uma orientação de recuperação e o horário da última tentativa concluída. “Tudo pronto” exige três resultados bem-sucedidos e dentro da validade. Essa indicação cobre as conexões; não valida indexadores, fontes de download, permissões ou volumes de mídia.
+Em **Configurações**, o aplicativo verifica as conexões com TMDB, Prowlarr e qBittorrent. Campos preenchidos não comprovam disponibilidade. Cada linha mostra o resultado, uma orientação de recuperação e o horário da última tentativa concluída. O contador de conexões verificadas exige resultados bem-sucedidos dentro da validade. Após a integração da Issue #16, três conexões disponíveis não bastam para anunciar “Tudo pronto”: a pasta tem um [diagnóstico separado](diagnostico-armazenamento.md), que mantém o compartilhamento físico inconclusivo sem prova. A verificação das conexões não valida indexadores nem fontes de download.
 
 ## Contrato da API
 
@@ -79,4 +79,4 @@ Após o intervalo mínimo, clique em **Testar novamente**. Prowlarr deve ficar i
 Invoke-RestMethod -Method Post http://127.0.0.1:18080/test/prowlarr/start
 ```
 
-Teste novamente após o intervalo mínimo e confira a recuperação de “Tudo pronto”. Espere um minuto sem atualizar e confira “Desatualizado”. Encerre a prévia com Ctrl+C; isso fecha somente os servidores de teste.
+Teste novamente após o intervalo mínimo e confira a recuperação das três conexões verificadas. Espere um minuto sem atualizar e confira “Desatualizado”. A prévia de conexões não oferece o endpoint de diagnóstico de armazenamento: essa seção pode informar que não foi possível diagnosticar e o resumo não deve anunciar “Tudo pronto”. Para validar a pasta, use a instalação isolada completa descrita no guia de armazenamento. Encerre a prévia com Ctrl+C; isso fecha somente os servidores de teste.

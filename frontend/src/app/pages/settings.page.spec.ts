@@ -10,11 +10,11 @@ describe('SettingsPage diagnostics', () => {
     id, configured: true, status, reason, checkedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 60000).toISOString(), retryAfter: null,
   }));
-  let api: { integrations: ReturnType<typeof vi.fn>; checkIntegrations: ReturnType<typeof vi.fn> };
+  let api: { integrations: ReturnType<typeof vi.fn>; checkIntegrations: ReturnType<typeof vi.fn>; checkStorage: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     vi.useFakeTimers();
-    api = { integrations: vi.fn(() => of(results())), checkIntegrations: vi.fn(() => of(results())) };
+    api = { checkStorage: vi.fn(() => of({ status: 'inconclusive', backend: 'read_write_verified', mapping: 'compatible_unproven', sharedDirectoryVerified: false, checkedAt: new Date().toISOString() })), integrations: vi.fn(() => of(results())), checkIntegrations: vi.fn(() => of(results())) };
     TestBed.configureTestingModule({ providers: [
       { provide: SystemApiService, useValue: api },
       { provide: LibraryApiService, useValue: { storage: () => of({ downloadDirectory: 'incoming' }) } },
@@ -31,11 +31,13 @@ describe('SettingsPage diagnostics', () => {
     expect(page.connectionLabel('tmdb')).toBe('Desconhecido');
     page.load(true);
     fixture.detectChanges();
-    expect(fixture.nativeElement.textContent).toContain('Tudo pronto');
+    expect(page.connectionsAvailable()).toBe(true);
+    expect(fixture.nativeElement.textContent).not.toContain('Tudo pronto');
     expect(fixture.nativeElement.textContent).toContain('Última verificação:');
     await vi.advanceTimersByTimeAsync(61000);
     fixture.detectChanges();
     expect(page.allConfigured()).toBe(false);
+    expect(page.connectionsAvailable()).toBe(false);
     expect(page.connectionLabel('tmdb')).toBe('Desatualizado');
     expect(fixture.nativeElement.textContent).not.toContain('Tudo pronto');
     expect(api.integrations).toHaveBeenCalledTimes(1);
@@ -55,12 +57,14 @@ describe('SettingsPage diagnostics', () => {
     expect(page.connectionLabel('qbittorrent')).toBe('Disponível');
     expect(page.refreshDisabled()).toBe(true);
     await vi.advanceTimersByTimeAsync(500);
-    expect(page.allConfigured()).toBe(true);
+    expect(page.connectionsAvailable()).toBe(true);
+    expect(page.allConfigured()).toBe(false);
     await vi.advanceTimersByTimeAsync(5000);
     expect(api.integrations).toHaveBeenCalledTimes(2);
     page.load(true);
     expect(api.checkIntegrations).toHaveBeenCalledTimes(1);
-    expect(page.allConfigured()).toBe(true);
+    expect(page.connectionsAvailable()).toBe(true);
+    expect(page.allConfigured()).toBe(false);
   });
 
   it('separates backend communication failure from integration authentication and allows retry', () => {
@@ -73,7 +77,8 @@ describe('SettingsPage diagnostics', () => {
     expect(fixture.nativeElement.textContent).not.toContain('private-secret');
     expect(page.refreshDisabled()).toBe(false);
     page.load(true);
-    expect(page.allConfigured()).toBe(true);
+    expect(page.connectionsAvailable()).toBe(true);
+    expect(page.allConfigured()).toBe(false);
   });
 
   it('discards an older response when a newer request completes', () => {
@@ -81,9 +86,11 @@ describe('SettingsPage diagnostics', () => {
     api.integrations.mockReturnValue(old);
     const page = TestBed.createComponent(SettingsPage).componentInstance;
     page.load(true);
-    expect(page.allConfigured()).toBe(true);
+    expect(page.connectionsAvailable()).toBe(true);
+    expect(page.allConfigured()).toBe(false);
     old.next(results('authentication_rejected', 'authentication_rejected'));
-    expect(page.allConfigured()).toBe(true);
+    expect(page.connectionsAvailable()).toBe(true);
+    expect(page.allConfigured()).toBe(false);
     expect(page.connectionLabel('tmdb')).toBe('Disponível');
   });
 
