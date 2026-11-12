@@ -43,6 +43,8 @@ GET http://localhost:8080/api/catalog/search?query=Matrix
 
 ## Desenvolvimento sem Docker
 
+O CI verifica automaticamente os testes do backend e os testes e a compilação do frontend em PRs para `develop` e `main`, e em alterações nessas branches. Veja [CI do projeto](docs/ci.md) para detalhes e execução local.
+
 O backend requer Java 21. O frontend requer uma versão de Node suportada pelo Angular 22, preferencialmente Node 26.
 
 ```text
