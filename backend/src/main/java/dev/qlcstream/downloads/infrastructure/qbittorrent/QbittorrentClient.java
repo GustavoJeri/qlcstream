@@ -34,7 +34,7 @@ public class QbittorrentClient {
     }
 
     public List<TorrentSnapshot> torrents() {
-        if (!properties.configured()) return List.of();
+        if (!properties.configured()) throw new QbittorrentUnavailableException("qBittorrent não está configurado.");
         try {
             var client = authenticatedClient();
             var request = HttpRequest.newBuilder(URI.create(properties.baseUrl() + "/api/v2/torrents/info"))
@@ -47,7 +47,7 @@ public class QbittorrentClient {
             for (JsonNode torrent : objectMapper.readTree(response.body())) {
                 snapshots.add(new TorrentSnapshot(torrent.path("hash").asString(), torrent.path("state").asString(),
                         torrent.path("progress").asDouble(), torrent.path("size").asLong(), torrent.path("downloaded").asLong(),
-                        torrent.path("dlspeed").asLong(), torrent.path("eta").asLong(), torrent.path("save_path").asString()));
+                        torrent.path("dlspeed").asLong(), torrent.path("eta").asLong(), torrent.path("save_path").asString(), torrent.path("name").asString()));
             }
             return snapshots;
         } catch (IOException exception) {
@@ -74,8 +74,10 @@ public class QbittorrentClient {
         }
     }
 
-    public void pause(String hash) { command("/api/v2/torrents/pause", hash); }
-    public void resume(String hash) { command("/api/v2/torrents/resume", hash); }
+    public void pause(String hash) { command("/api/v2/torrents/stop", hash); }
+    public void resume(String hash) { command("/api/v2/torrents/start", hash); }
+
+    public void recheck(String hash) { command("/api/v2/torrents/recheck", hash); }
 
     private void command(String path, String hash) {
         if (hash == null || hash.isBlank()) throw new QbittorrentUnavailableException("O torrent não possui identificador.");
@@ -91,13 +93,20 @@ public class QbittorrentClient {
     }
 
     private HttpClient authenticatedClient() throws IOException, InterruptedException {
+        if (!properties.configured()) throw new QbittorrentUnavailableException("qBittorrent não está configurado.");
         var client = HttpClient.newBuilder().cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL))
                 .connectTimeout(Duration.ofSeconds(5)).build();
         var login = post(client, "/api/v2/auth/login", Map.of("username", properties.username(), "password", properties.password()));
-        if (login.statusCode() < 200 || login.statusCode() >= 300) {
+        if (!loginSucceeded(login)) {
             throw new QbittorrentUnavailableException("Não foi possível autenticar no qBittorrent.");
         }
         return client;
+    }
+
+    private static boolean loginSucceeded(HttpResponse<String> response) {
+        // qBittorrent 5.3 uses 204; older releases return 200 + Ok.
+        return response.statusCode() == 204
+                || (response.statusCode() == 200 && "Ok.".equals(response.body().trim()));
     }
 
     public void add(String acquisitionRef, String savePath) {
@@ -105,14 +114,9 @@ public class QbittorrentClient {
             throw new QbittorrentUnavailableException("qBittorrent não está configurado.");
         }
         try {
-            var client = HttpClient.newBuilder().cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL))
-                    .connectTimeout(Duration.ofSeconds(5)).build();
-            var login = post(client, "/api/v2/auth/login", Map.of("username", properties.username(), "password", properties.password()));
-            if (login.statusCode() < 200 || login.statusCode() >= 300) {
-                throw new QbittorrentUnavailableException("Não foi possível autenticar no qBittorrent.");
-            }
+            var client = authenticatedClient();
             var add = post(client, "/api/v2/torrents/add", Map.of("urls", acquisitionRef, "savepath", savePath));
-            if (add.statusCode() < 200 || add.statusCode() >= 300) {
+            if (!additionSucceeded(add)) {
                 throw new QbittorrentUnavailableException("O qBittorrent recusou esta fonte de download.");
             }
         } catch (IOException exception) {
@@ -120,6 +124,20 @@ public class QbittorrentClient {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new QbittorrentUnavailableException("A comunicação com o qBittorrent foi interrompida.", exception);
+        }
+    }
+
+    private boolean additionSucceeded(HttpResponse<String> response) {
+        if (response.statusCode() < 200 || response.statusCode() >= 300) return false;
+        var body = response.body().trim();
+        if (response.statusCode() == 204 || "Ok.".equals(body)) return true;
+        // qBittorrent 5.3 returns a JSON summary, with 202 while URL retrieval is pending.
+        if (!body.startsWith("{")) return false;
+        try {
+            var result = objectMapper.readTree(body);
+            return result.path("success_count").asInt(0) > 0 || result.path("pending_count").asInt(0) > 0;
+        } catch (RuntimeException invalidResponse) {
+            return false;
         }
     }
 
@@ -145,6 +163,10 @@ public class QbittorrentClient {
     }
 
     public record TorrentSnapshot(String hash, String state, double progress, long size, long downloaded,
-            long downloadSpeedBps, long eta, String savePath) {
+            long downloadSpeedBps, long eta, String savePath, String name) {
+        public TorrentSnapshot(String hash, String state, double progress, long size, long downloaded,
+                long downloadSpeedBps, long eta, String savePath) {
+            this(hash, state, progress, size, downloaded, downloadSpeedBps, eta, savePath, "");
+        }
     }
 }

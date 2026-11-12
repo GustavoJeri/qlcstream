@@ -1,6 +1,5 @@
 package dev.qlcstream.downloads.infrastructure.qbittorrent;
 
-import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -16,7 +15,7 @@ import dev.qlcstream.downloads.infrastructure.web.DownloadUpdatePublisher;
 @Component
 public class QbittorrentDownloadSynchronizer {
 
-    private static final Set<String> FINAL_STATUSES = Set.of("COMPLETED", "CANCELED", "REMOVED", "ERROR");
+    private static final Set<String> FINAL_STATUSES = Set.of("COMPLETED", "CANCELED", "REMOVED");
 
     private final SpringDataDownloadRepository downloads;
     private final QbittorrentClient qbittorrent;
@@ -34,13 +33,17 @@ public class QbittorrentDownloadSynchronizer {
     @Scheduled(fixedDelayString = "${qlc-stream.qbittorrent.sync-delay:PT5S}")
     @Transactional
     public void synchronize() {
-        var torrentsByPath = qbittorrent.torrents().stream()
-                .collect(Collectors.toMap(QbittorrentClient.TorrentSnapshot::savePath, Function.identity(), (first, ignored) -> first));
+        var torrents = qbittorrent.torrents();
+        var torrentsByHash = torrents.stream()
+                .collect(Collectors.toMap(QbittorrentClient.TorrentSnapshot::hash, Function.identity(), (first, ignored) -> first));
+        var torrentsByPath = torrents.stream()
+                .collect(Collectors.toMap(torrent -> normalizePath(torrent.savePath()), Function.identity(), (first, ignored) -> first));
         var changed = false;
         for (var download : downloads.findByStatusNotIn(FINAL_STATUSES)) {
-            var torrent = torrentsByPath.get("/downloads/" + download.relativeDirectory());
+            var torrent = download.infoHash() == null ? null : torrentsByHash.get(download.infoHash());
+            if (torrent == null) torrent = torrentsByPath.get(normalizePath("/downloads/" + download.relativeDirectory()));
             if (torrent != null) {
-                var status = statusFor(torrent.state());
+                var status = statusFor(torrent.state(), torrent.progress());
                 var previousStatus = download.status();
                 changed |= download.synchronize(torrent.hash(), torrent.state(), torrent.progress(), torrent.size(), torrent.downloaded(),
                         torrent.downloadSpeedBps(), torrent.eta(), status);
@@ -56,13 +59,11 @@ public class QbittorrentDownloadSynchronizer {
                         library.registerCompletedSeries(download.seriesTmdbId(), download.seriesTitle(), download.seriesPosterPath(),
                                 download.seasonNumber(), download.episodeNumber(), download.id(), download.relativeDirectory());
                     }
-                    if (!library.hasPresentVideo(download.id())) {
-                        qbittorrent.remove(torrent.hash());
-                        download.markRemoved();
-                        changed = true;
-                    }
+                    // File discovery can fail temporarily (mount unavailable, permissions, etc.).
+                    // Retry on the next cycle; never delete a torrent based on this scan.
                 }
-            } else if (download.infoHash() != null && !download.infoHash().isBlank()) {
+            } else if ((download.infoHash() != null && !download.infoHash().isBlank())
+                    || download.wasSubmittedBefore(java.time.Instant.now().minusSeconds(300))) {
                 if (download.markMissingFromEngine()) {
                     changed = true;
                     updates.publishNotification("ERROR", "Download não encontrado", download.releaseTitle());
@@ -72,17 +73,22 @@ public class QbittorrentDownloadSynchronizer {
         if (changed) updates.publish();
     }
 
+    private static String normalizePath(String path) {
+        return path.replace('\\', '/').replaceAll("/+$", "");
+    }
+
     private static boolean isCompleted(String status) {
         return status.equals("SEEDING") || status.equals("COMPLETED");
     }
 
-    private static String statusFor(String state) {
+    private static String statusFor(String state, double progress) {
         return switch (state) {
-            case "metaDL" -> "METADATA";
+            case "metaDL", "forcedMetaDL" -> "METADATA";
             case "downloading", "forcedDL" -> "DOWNLOADING";
             case "stalledDL" -> "STALLED";
-            case "checkingDL", "checkingUP", "checkingResumeData" -> "CHECKING";
+            case "checkingDL", "checkingUP", "checkingResumeData", "moving" -> "CHECKING";
             case "pausedDL", "pausedUP", "stoppedDL", "stoppedUP" -> "PAUSED";
+            case "queuedUP" -> progress >= 1 ? "SEEDING" : "QUEUED";
             case "uploading", "forcedUP", "stalledUP" -> "SEEDING";
             case "error", "missingFiles", "unknown" -> "ERROR";
             default -> "QUEUED";

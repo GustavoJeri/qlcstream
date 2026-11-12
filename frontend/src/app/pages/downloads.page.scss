@@ -22,3 +22,6 @@
 .downloads-error > i { color: var(--danger); }
 @media (max-width: 680px) { .download-row { grid-template-columns: 42px minmax(0, 1fr); gap: 12px; padding: 13px; } .download-poster { width: 42px; height: 60px; } .download-progress { grid-column: 1 / -1; } }
 @media (max-width: 480px) { .empty-downloads, .downloads-state { align-items: flex-start; padding: 25px; } }
+
+.action-error { padding: 14px 18px; border: 1px solid var(--danger); border-radius: var(--radius-md); color: var(--danger); }
+.download-actions button:disabled { opacity: .5; cursor: wait; }

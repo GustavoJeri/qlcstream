@@ -21,11 +21,25 @@ public class DownloadControlService {
     @Transactional
     public void control(UUID id, Action action) {
         var download = downloads.findById(id).orElseThrow(() -> new IllegalArgumentException("Download não encontrado."));
+        if ("REMOVED".equals(download.status()) || "CANCELED".equals(download.status())) return;
         var hash = download.infoHash();
-        if (hash == null || hash.isBlank()) throw new IllegalStateException("O torrent ainda não possui metadados.");
+        if ((hash == null || hash.isBlank()) && action == Action.CANCEL) {
+            // Remove only a torrent owned by this request; another request may share its release.
+            var expectedPath = "/downloads/" + download.relativeDirectory();
+            qbittorrent.torrents().stream()
+                    .filter(torrent -> expectedPath.equals(torrent.savePath().replaceAll("/+$", "")))
+                    .findFirst().ifPresent(torrent -> qbittorrent.remove(torrent.hash()));
+            download.markRemoved();
+            return;
+        }
+        if (hash == null || hash.isBlank()) throw new IllegalStateException("Esta tentativa não está vinculada a um torrent. Cancele-a e selecione a fonte novamente.");
         switch (action) {
             case PAUSE -> { qbittorrent.pause(hash); download.markStatus("PAUSED"); }
-            case RESUME -> { qbittorrent.resume(hash); download.markStatus("QUEUED"); }
+            case RESUME -> {
+                if ("ERROR".equals(download.status())) qbittorrent.recheck(hash);
+                qbittorrent.resume(hash);
+                download.markStatus("QUEUED");
+            }
             case CANCEL -> { qbittorrent.remove(hash); download.markRemoved(); }
         }
     }

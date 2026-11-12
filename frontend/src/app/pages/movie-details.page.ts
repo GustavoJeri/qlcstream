@@ -140,7 +140,7 @@ export class MovieDetailsPage {
     const resolution = title.includes('2160p') ? 2160 : title.includes('1080p') ? 1080 : title.includes('720p') ? 720 : null;
     const source = title.includes('web-dl') ? 'WEB-DL' : title.includes('webrip') ? 'WEBRip' : title.includes('bluray') ? 'BluRay' : null;
     const dynamicRange = title.includes('hdr') ? 'HDR' : null;
-    this.downloadsApi.enqueue({ movieTmdbId: movie.tmdbId, releaseTitle: release.title, acquisitionRef, indexerName: release.indexer, resolutionHeight: resolution, sourceType: source, dynamicRange }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({ next: () => { this.submissionMessage.set('Download adicionado. Acompanhe o andamento em Downloads.'); this.submittingRelease.set(null); }, error: () => { this.submissionMessage.set('Não foi possível iniciar este download. Tente outra opção.'); this.submittingRelease.set(null); } });
+    this.downloadsApi.enqueue({ movieTmdbId: movie.tmdbId, releaseTitle: release.title, acquisitionRef, indexerName: release.indexer, resolutionHeight: resolution, sourceType: source, dynamicRange }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({ next: () => { this.submissionMessage.set('Download adicionado. Acompanhe o andamento em Downloads.'); this.submittingRelease.set(null); }, error: (error: unknown) => { this.submissionMessage.set(error instanceof HttpErrorResponse ? error.error?.detail || 'Não foi possível iniciar este download. Tente novamente.' : 'Não foi possível iniciar este download. Tente novamente.'); this.submittingRelease.set(null); } });
   }
   addToLibrary(movie: MovieDetails): void {
     this.libraryAction.set('adding');
