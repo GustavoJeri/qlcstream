@@ -16,15 +16,15 @@ Detalhes: [histórico](../CHANGELOG.md) e [comportamento dos downloads](download
 
 ## Próximo incremento — F01: diagnóstico real das conexões
 
-Hoje `/api/system/integrations` verifica se os campos estão preenchidos. Isso não comprova que os serviços estão acessíveis nem que as credenciais funcionam. A tela pode informar disponibilidade mesmo sem uma conexão válida.
+O diagnóstico de conexões da Issue #15 consulta as APIs autenticadas de leitura e apresenta estados independentes na interface. Limites, contrato e roteiro de validação estão em [diagnóstico das integrações](diagnostico-integracoes.md). A validação de pastas pertence à Issue #16.
 
 Entregar:
 
-- [ ] Distinguir configuração ausente, conexão indisponível, autenticação recusada e conexão funcionando.
-- [ ] Testar TMDB, Prowlarr e qBittorrent com limites de tempo.
-- [ ] Explicar na tela a ação necessária para cada falha.
+- [x] Distinguir configuração ausente, conexão indisponível, autenticação recusada e conexão funcionando.
+- [x] Testar TMDB, Prowlarr e qBittorrent com limites de tempo.
+- [x] Explicar na tela a ação necessária para cada falha.
 - [ ] Verificar leitura e escrita da pasta compartilhada pelos serviços.
-- [ ] Ocultar valores de credenciais nas respostas e mensagens.
+- [x] Ocultar valores de credenciais nas respostas e mensagens do diagnóstico.
 
 Aceite: endereço incorreto, senha inválida e serviço desligado produzem diagnósticos diferentes; a tela só declara um serviço pronto depois de uma consulta bem-sucedida.
 

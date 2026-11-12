@@ -12,8 +12,9 @@ Este fork de [diegodinizm1/qlcstream](https://github.com/diegodinizm1/qlcstream)
 - [Como os downloads se comportam](docs/downloads-confiabilidade.md)
 - [Primeira execução: configuração manual atual](docs/primeira-execucao.md)
 - [Plano de evolução: diagnóstico e configuração guiada](docs/roadmap.md)
+- [Diagnóstico das conexões: estados, limites e validação isolada](docs/diagnostico-integracoes.md)
 
-A configuração guiada ainda não foi implementada. O próximo incremento será testar as conexões de verdade e explicar na interface o que precisa ser corrigido.
+A tela de configurações testa as conexões autenticadas com TMDB, Prowlarr e qBittorrent e orienta a recuperação de falhas. A configuração guiada ainda não foi implementada.
 
 ## Estrutura
 
