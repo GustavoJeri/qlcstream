@@ -1,63 +1,118 @@
-import { provideHttpClient } from '@angular/common/http';
-import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { of, Subject, throwError } from 'rxjs';
 import { SettingsPage } from './settings.page';
+import { IntegrationStatus, SystemApiService } from '../core/system-api.service';
+import { LibraryApiService } from '../core/library-api.service';
 
-describe('Storage diagnostics in settings', () => {
-  let http: HttpTestingController;
+describe('SettingsPage diagnostics', () => {
+  const ids: IntegrationStatus['id'][] = ['tmdb', 'prowlarr', 'qbittorrent'];
+  const results = (status: IntegrationStatus['status'] = 'available', reason = 'ok'): IntegrationStatus[] => ids.map((id) => ({
+    id, configured: true, status, reason, checkedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 60000).toISOString(), retryAfter: null,
+  }));
+  let api: { integrations: ReturnType<typeof vi.fn>; checkIntegrations: ReturnType<typeof vi.fn>; checkStorage: ReturnType<typeof vi.fn> };
+
   beforeEach(() => {
-    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
-    http = TestBed.inject(HttpTestingController);
+    vi.useFakeTimers();
+    api = { checkStorage: vi.fn(() => of({ status: 'inconclusive', backend: 'read_write_verified', mapping: 'compatible_unproven', sharedDirectoryVerified: false, checkedAt: new Date().toISOString() })), integrations: vi.fn(() => of(results())), checkIntegrations: vi.fn(() => of(results())) };
+    TestBed.configureTestingModule({ providers: [
+      { provide: SystemApiService, useValue: api },
+      { provide: LibraryApiService, useValue: { storage: () => of({ downloadDirectory: 'incoming' }) } },
+    ] });
   });
-  afterEach(() => http.verify());
+  afterEach(() => { TestBed.resetTestingModule(); vi.useRealTimers(); });
 
-  function open() {
+  it('requires a successful fresh check before presenting availability and expires it on screen', async () => {
+    api.integrations.mockReturnValue(of(results('unknown', 'unknown')));
     const fixture = TestBed.createComponent(SettingsPage);
-    http.expectOne('/api/system/integrations').flush(['tmdb', 'prowlarr', 'qbittorrent'].map(id => ({ id, configured: true })));
-    http.expectOne('/api/library/storage').flush({ downloadDirectory: 'incoming' });
-    return fixture;
-  }
-  function respond(backend: string, mapping: string, status = 'blocked') {
-    const request = http.expectOne('/api/system/storage/check');
-    expect(request.request.method).toBe('POST');
-    request.flush({ status, backend, mapping, sharedDirectoryVerified: false, checkedAt: '2026-11-12T12:00:00Z' });
-  }
-  it('keeps compatible paths inconclusive and never announces ready', () => {
-    const fixture = open();
-    respond('read_write_verified', 'compatible_unproven', 'inconclusive');
+    const page = fixture.componentInstance;
     fixture.detectChanges();
-    expect(fixture.nativeElement.textContent).toContain('Compartilhamento inconclusivo');
-    expect(fixture.nativeElement.textContent).toContain('Leitura e escrita do backend comprovadas');
+    expect(page.allConfigured()).toBe(false);
+    expect(page.connectionLabel('tmdb')).toBe('Desconhecido');
+    page.load(true);
+    fixture.detectChanges();
+    expect(page.connectionsAvailable()).toBe(true);
     expect(fixture.nativeElement.textContent).not.toContain('Tudo pronto');
-  });
-  it.each([
-    ['missing_directory', 'A raiz ou a pasta salva não existe'],
-    ['permission_denied', 'não tem as permissões necessárias'],
-    ['outside_root', 'Destino fora da raiz'],
-  ])('explains blocked backend %s', (reason, message) => {
-    const fixture = open(); respond(reason, 'compatible_unproven'); fixture.detectChanges();
-    expect(fixture.nativeElement.textContent).toContain(message);
-    expect(fixture.nativeElement.textContent).toContain('Armazenamento precisa de atenção');
-    expect(fixture.componentInstance.allConfigured()).toBe(false);
-  });
-  it('explains incompatible engine paths', () => {
-    const fixture = open(); respond('read_write_verified', 'mapping_incompatible'); fixture.detectChanges();
-    expect(fixture.nativeElement.textContent).toContain('Destino do qBittorrent incompatível');
-  });
-  it('clears old evidence when a saved destination changes and checks the saved value', () => {
-    const fixture = open(); respond('read_write_verified', 'compatible_unproven', 'inconclusive');
-    fixture.componentInstance.downloadDirectory.set('new'); fixture.componentInstance.saveStorage();
-    expect(fixture.componentInstance.storageDiagnostic()).toBeNull();
-    const save = http.expectOne('/api/library/storage');
-    expect(save.request.body).toEqual({ downloadDirectory: 'new' }); save.flush({ downloadDirectory: 'new' });
-    respond('missing_directory', 'compatible_unproven');
-    expect(fixture.componentInstance.storageDiagnostic()?.backend).toBe('missing_directory');
-  });
-  it('prevents overlapping checks and reports backend communication errors', () => {
-    const fixture = open(); fixture.componentInstance.checkStorage();
-    http.expectOne('/api/system/storage/check').flush({}, { status: 503, statusText: 'Unavailable' });
+    expect(fixture.nativeElement.textContent).toContain('Última verificação:');
+    await vi.advanceTimersByTimeAsync(61000);
     fixture.detectChanges();
-    expect(fixture.nativeElement.textContent).toContain('Não foi possível diagnosticar');
-    expect(fixture.componentInstance.storageDiagnostic()).toBeNull();
+    expect(page.allConfigured()).toBe(false);
+    expect(page.connectionsAvailable()).toBe(false);
+    expect(page.connectionLabel('tmdb')).toBe('Desatualizado');
+    expect(fixture.nativeElement.textContent).not.toContain('Tudo pronto');
+    expect(api.integrations).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows independent progress, authentication failure and recovery without excessive polling', async () => {
+    const items = results();
+    items[0] = { ...items[0], status: 'checking', reason: 'checking', checkedAt: null };
+    items[1] = { ...items[1], status: 'authentication_rejected', reason: 'authentication_rejected' };
+    api.integrations.mockReturnValueOnce(of(items)).mockReturnValue(of(results()));
+    const fixture = TestBed.createComponent(SettingsPage);
+    const page = fixture.componentInstance;
+    fixture.detectChanges();
+    expect(page.connectionLabel('tmdb')).toBe('Verificando');
+    expect(page.connectionLabel('prowlarr')).toBe('Autenticação recusada');
+    expect(page.connectionHelp('prowlarr')).toContain('chave de API');
+    expect(page.connectionLabel('qbittorrent')).toBe('Disponível');
+    expect(page.refreshDisabled()).toBe(true);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(page.connectionsAvailable()).toBe(true);
+    expect(page.allConfigured()).toBe(false);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(api.integrations).toHaveBeenCalledTimes(2);
+    page.load(true);
+    expect(api.checkIntegrations).toHaveBeenCalledTimes(1);
+    expect(page.connectionsAvailable()).toBe(true);
+    expect(page.allConfigured()).toBe(false);
+  });
+
+  it('separates backend communication failure from integration authentication and allows retry', () => {
+    api.integrations.mockReturnValue(throwError(() => new Error('private-secret')));
+    const fixture = TestBed.createComponent(SettingsPage);
+    const page = fixture.componentInstance;
+    fixture.detectChanges();
+    expect(page.connectionLabel('tmdb')).toBe('Não confirmado');
+    expect(page.connectionHelp('tmdb')).toContain('backend');
+    expect(fixture.nativeElement.textContent).not.toContain('private-secret');
+    expect(page.refreshDisabled()).toBe(false);
+    page.load(true);
+    expect(page.connectionsAvailable()).toBe(true);
+    expect(page.allConfigured()).toBe(false);
+  });
+
+  it('discards an older response when a newer request completes', () => {
+    const old = new Subject<IntegrationStatus[]>();
+    api.integrations.mockReturnValue(old);
+    const page = TestBed.createComponent(SettingsPage).componentInstance;
+    page.load(true);
+    expect(page.connectionsAvailable()).toBe(true);
+    expect(page.allConfigured()).toBe(false);
+    old.next(results('authentication_rejected', 'authentication_rejected'));
+    expect(page.connectionsAvailable()).toBe(true);
+    expect(page.allConfigured()).toBe(false);
+    expect(page.connectionLabel('tmdb')).toBe('Disponível');
+  });
+
+  it('bounds polling and makes retry available even if the last snapshot was checking', async () => {
+    api.integrations.mockReturnValue(of(results('checking', 'checking')));
+    const page = TestBed.createComponent(SettingsPage).componentInstance;
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(page.state()).toBe('error');
+    expect(page.refreshDisabled()).toBe(false);
+    expect(api.integrations.mock.calls.length).toBeLessThanOrEqual(17);
+  });
+
+  it('respects the server retry interval and explains each unavailable reason', async () => {
+    api.integrations.mockReturnValue(of(results('unavailable', 'timeout').map((item) => ({ ...item, retryAfter: new Date(Date.now() + 10000).toISOString() }))));
+    const page = TestBed.createComponent(SettingsPage).componentInstance;
+    expect(page.refreshDisabled()).toBe(true);
+    expect(page.connectionHelp('tmdb')).toContain('limite');
+    await vi.advanceTimersByTimeAsync(11000);
+    expect(page.refreshDisabled()).toBe(false);
+    for (const reason of ['invalid_configuration', 'connection_failed', 'invalid_response', 'http_error', 'missing_configuration']) {
+      page.integrations.set(results('unavailable', reason));
+      expect(page.connectionHelp('tmdb')).not.toContain('Ainda não há');
+    }
   });
 });
