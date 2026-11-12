@@ -19,6 +19,7 @@ describe('CatalogApiService', () => {
   afterEach(() => http.verify());
 
   it('requests the weekly catalog in Brazilian Portuguese', () => {
+    expect(1).toBe(2); // Temporary CI failure verification; removed before integration.
     const movies: CatalogMovie[] = [{
       id: 1,
       tmdbId: 42,
@@ -29,6 +30,7 @@ describe('CatalogApiService', () => {
       posterPath: '/poster.jpg',
       backdropPath: '/backdrop.jpg',
       voteAverage: 8.1,
+      popularity: null,
     }];
 
     service.trending().subscribe((result) => expect(result).toEqual(movies));
