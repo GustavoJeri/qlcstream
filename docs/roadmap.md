@@ -23,10 +23,12 @@ Entregar:
 - [ ] Distinguir configuração ausente, conexão indisponível, autenticação recusada e conexão funcionando.
 - [ ] Testar TMDB, Prowlarr e qBittorrent com limites de tempo.
 - [ ] Explicar na tela a ação necessária para cada falha.
-- [ ] Verificar leitura e escrita da pasta compartilhada pelos serviços.
+- [x] Diagnosticar leitura e escrita do backend na pasta salva e comparar destinos do motor, mantendo o compartilhamento físico inconclusivo sem prova.
 - [ ] Ocultar valores de credenciais nas respostas e mensagens.
 
 Aceite: endereço incorreto, senha inválida e serviço desligado produzem diagnósticos diferentes; a tela só declara um serviço pronto depois de uma consulta bem-sucedida.
+
+O diagnóstico de armazenamento da Issue #16 é independente do diagnóstico das conexões. Contrato, limitações e validação com volumes próprios estão em [diagnóstico de armazenamento](diagnostico-armazenamento.md).
 
 ## F02: assistente de primeira configuração
 

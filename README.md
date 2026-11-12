@@ -12,8 +12,9 @@ Este fork de [diegodinizm1/qlcstream](https://github.com/diegodinizm1/qlcstream)
 - [Como os downloads se comportam](docs/downloads-confiabilidade.md)
 - [Primeira execução: configuração manual atual](docs/primeira-execucao.md)
 - [Plano de evolução: diagnóstico e configuração guiada](docs/roadmap.md)
+- [Diagnóstico da pasta de mídia e limites da verificação dos volumes](docs/diagnostico-armazenamento.md)
 
-A configuração guiada ainda não foi implementada. O próximo incremento será testar as conexões de verdade e explicar na interface o que precisa ser corrigido.
+A tela de configurações diagnostica leitura e escrita na pasta salva e compara os destinos do qBittorrent, com orientações para falhas e resultado inconclusivo quando o volume físico não pode ser comprovado. A configuração guiada ainda não foi implementada; o diagnóstico real das conexões é tratado separadamente na Issue #15.
 
 ## Estrutura
 

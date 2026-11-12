@@ -24,6 +24,9 @@ import jakarta.validation.constraints.NotBlank;
 @RequestMapping("/api/library")
 public class LibraryController {
 
+    @org.springframework.beans.factory.annotation.Value("${qlc-stream.storage.media-root:/data}")
+    private String mediaRoot = "/data";
+
     private final JdbcTemplate jdbc;
     private final LocalStorageSettings storageSettings;
 
@@ -37,7 +40,7 @@ public class LibraryController {
         var relativePath = jdbc.query("SELECT relative_path FROM local_file WHERE id = ? AND availability = 'PRESENT'", result ->
                 result.next() ? result.getString(1) : null, id);
         if (relativePath == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Arquivo não encontrado.");
-        var root = Path.of("/data").toAbsolutePath().normalize();
+        var root = Path.of(mediaRoot).toAbsolutePath().normalize();
         var file = root.resolve(relativePath).normalize();
         if (!file.startsWith(root)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Caminho inválido.");
         try {
