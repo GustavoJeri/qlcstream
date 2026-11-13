@@ -1,10 +1,12 @@
 # Primeira execução
 
-Para uma instalação nova pelo Compose, inicie os serviços e abra **Configurar**. O [assistente por etapas](assistente-primeira-configuracao.md) permite criar a proteção no servidor, testar e salvar as integrações sem editar credenciais em arquivos. Configurações existentes por ambiente são preservadas. O guia manual abaixo continua disponível para instalações administradas por ambiente.
+No Windows, instale e abra Docker Desktop em modo Linux e execute **`iniciar-qlcstream.bat`** na raiz. Aguarde as etapas: o navegador abre quando backend e interface responderem. Não é necessário editar `.env` ou preencher tokens para abrir o aplicativo. Veja o [contrato do inicializador e a recuperação de falhas](inicializacao-windows.md).
+
+Abra **Configurar**. O [assistente por etapas](assistente-primeira-configuracao.md) permite criar a proteção no servidor, testar e salvar as integrações sem editar credenciais em arquivos. Configurações existentes por ambiente são preservadas. Para usar o catálogo, configure TMDB; busca e downloads podem ser adiados. O guia manual abaixo continua disponível para instalações administradas por ambiente e outros sistemas.
 
 ## Configuração manual por ambiente
 
-O assistente de configuração ainda está no [plano de evolução](roadmap.md). Hoje é necessário configurar três integrações: TMDB para o catálogo, Prowlarr para busca de fontes e qBittorrent para downloads.
+Esta alternativa administrativa usa três integrações independentes: TMDB para o catálogo, Prowlarr para busca de fontes e qBittorrent para downloads. O assistente é a opção recomendada para preencher credenciais no Windows.
 
 ## 1. Preparar os requisitos
 
@@ -69,6 +71,6 @@ A tela atual testa autenticação e conectividade. Como alternativa às credenci
 
 Por padrão, os arquivos ficam em `data/media`, compartilhados como `/data` no backend e `/downloads` no qBittorrent. Alterações desse compartilhamento precisam manter ambos os serviços apontando para os mesmos arquivos.
 
-Depois da configuração inicial, usar `docker compose up -d` para iniciar novamente e `docker compose stop` para parar. Cancelar um download no aplicativo mantém os arquivos já salvos.
+No Windows, use `iniciar-qlcstream.bat` para iniciar novamente, inclusive após reiniciar o computador e abrir Docker Desktop. Ele reutiliza imagens, contêineres e volumes. Use `docker compose stop` para parar. Na administração manual, `docker compose up -d` também pode aplicar alterações de configuração e recriar contêineres; confira o [guia do inicializador](inicializacao-windows.md). Cancelar um download no aplicativo mantém os arquivos já salvos.
 
 O projeto usa imagens `latest` para algumas integrações. Fixar versões verificadas e facilitar as atualizações faz parte do incremento F04; isso ainda não foi alterado nesta entrega.

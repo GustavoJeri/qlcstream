@@ -74,4 +74,4 @@ Não publicar arquivos `.env`, credenciais, configurações pessoais dos serviç
 
 Contrato, limitações e validação com volumes próprios estão em [diagnóstico de armazenamento](diagnostico-armazenamento.md).
 
-A persistência das integrações da Issue #17 foi revisada e integrada em `develop` pela [PR #32](https://github.com/GustavoJeri/qlcstream/pull/32): [contrato, API e recuperação](configuracao-integracoes.md). O assistente da Issue #18 está implementado para revisão: [fluxo, preservação e evidências](assistente-primeira-configuracao.md).
+A persistência das integrações da Issue #17 foi revisada e integrada em `develop` pela [PR #32](https://github.com/GustavoJeri/qlcstream/pull/32): [contrato, API e recuperação](configuracao-integracoes.md). O assistente da Issue #18 foi integrado pela PR #33: [fluxo, preservação e evidências](assistente-primeira-configuracao.md). O inicializador da Issue #19 está implementado para revisão: [contrato, falhas e validação](inicializacao-windows.md). Publicação em `main` e atualização da instalação diária são etapas posteriores.
