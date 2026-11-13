@@ -145,3 +145,6 @@ try {
     # Only the random synthetic directory created above is removed.
     if ((Split-Path $testRoot -Leaf) -like 'QLC launcher with spaces *') { Remove-Item -LiteralPath $testRoot -Recurse -Force }
 }
+# GitHub's PowerShell wrapper propagates LASTEXITCODE. The deliberate native
+# failure above is asserted successfully and must not mark the suite as failed.
+exit 0
