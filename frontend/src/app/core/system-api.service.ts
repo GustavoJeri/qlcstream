@@ -22,9 +22,45 @@ export interface StorageDiagnostic {
   checkedAt: string;
 }
 
+export type IntegrationId = IntegrationStatus['id'];
+
+export interface IntegrationSettingsState {
+  id: IntegrationId;
+  source: 'environment' | 'application';
+  baseUrl: string;
+  usernamePresent: boolean;
+  secretPresent: boolean;
+  configured: boolean;
+}
+
+export interface IntegrationCandidate {
+  baseUrl?: string;
+  username?: string;
+  secret?: { action: 'replace'; value: string } | { action: 'clear' };
+}
+
+export type IntegrationSettingsChange =
+  | (IntegrationCandidate & { source: 'application' })
+  | { source: 'environment' };
+
+export interface IntegrationCandidateResult {
+  id: IntegrationId;
+  configured: boolean;
+  reason: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class SystemApiService {
   private readonly http = inject(HttpClient);
+  integrationSettings(): Observable<IntegrationSettingsState[]> {
+    return this.http.get<IntegrationSettingsState[]>(apiUrl('/api/system/integration-settings'));
+  }
+  updateIntegration(id: IntegrationId, change: IntegrationSettingsChange): Observable<IntegrationSettingsState> {
+    return this.http.put<IntegrationSettingsState>(apiUrl(`/api/system/integration-settings/${id}`), change);
+  }
+  testIntegration(id: IntegrationId, candidate: IntegrationCandidate): Observable<IntegrationCandidateResult> {
+    return this.http.post<IntegrationCandidateResult>(apiUrl(`/api/system/integration-settings/${id}/test`), candidate);
+  }
   checkStorage(): Observable<StorageDiagnostic> { return this.http.post<StorageDiagnostic>(apiUrl('/api/system/storage/check'), {}); }
   integrations(): Observable<IntegrationStatus[]> { return this.http.get<IntegrationStatus[]>(apiUrl('/api/system/integrations')); }
   checkIntegrations(): Observable<IntegrationStatus[]> { return this.http.post<IntegrationStatus[]>(apiUrl('/api/system/integrations/check'), {}); }
