@@ -1,5 +1,7 @@
 # Assistente de primeira configuração — Issue #18
 
+No Windows, use o [inicializador oficial](inicializacao-windows.md) `iniciar-qlcstream.bat` para chegar ao aplicativo sem exigir credenciais prévias. O inicializador não provisiona a chave nem altera integrações.
+
 Em **Configurar** (`/setup`), o aplicativo oferece etapas para catálogo, busca de fontes, motor e pasta. Um aviso convida a conferir configurações incompletas e problemas na pasta; o catálogo continua acessível quando busca ou downloads são adiados. Filmes, temporadas e episódios explicam a indisponibilidade das ações e apontam para o assistente.
 
 ## Preservação e retomada
@@ -60,4 +62,4 @@ Execute `python docs/validation/test-shared-access.py` na raiz. O roteiro usa o 
 
 Resultado aprovado: backend UID 100, GID 101 e grupo suplementar 1000; motor UID/GID 1000:1000. Ambos criaram arquivos e diretórios sintéticos, leram os arquivos um do outro e percorreram subpastas. `incoming` nova foi conferida como 100:1000 e modo 2770. Uma segunda preparação preservou bytes, proprietário, grupo e modo de um destino existente e de uma chave sintética; um link existente e seu destino também foram preservados. Nenhuma mídia, configuração ou chave pessoal foi montada. Essa verificação cobre permissões de acesso; não inicia um download nem muda o resultado inconclusivo do diagnóstico de equivalência física.
 
-A entrega aguarda revisão em PR para `develop`. A Issue #18 permanece aberta até revisão e integração.
+A entrega foi revisada e integrada em `develop` pela PR #33; a Issue #18 foi encerrada. A publicação em `main` é posterior.

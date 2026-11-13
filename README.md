@@ -10,7 +10,8 @@ Este fork de [diegodinizm1/qlcstream](https://github.com/diegodinizm1/qlcstream)
 
 - [O que mudou e o que foi validado](CHANGELOG.md)
 - [Como os downloads se comportam](docs/downloads-confiabilidade.md)
-- [Primeira execução: configuração manual atual](docs/primeira-execucao.md)
+- [Primeira execução e configuração pelo assistente](docs/primeira-execucao.md)
+- [Inicialização no Windows e recuperação de falhas](docs/inicializacao-windows.md)
 - [Diagnóstico da pasta de mídia e limites da verificação dos volumes](docs/diagnostico-armazenamento.md)
 - [Plano de evolução: diagnóstico e configuração guiada](docs/roadmap.md)
 - [Diagnóstico das conexões: estados, limites e validação isolada](docs/diagnostico-integracoes.md)
@@ -26,12 +27,9 @@ A tela de configurações testa as conexões autenticadas com TMDB, Prowlarr e q
 
 ## Primeira execução
 
-Para configurar catálogo, busca de fontes e motor de downloads, seguir o [guia completo da primeira execução](docs/primeira-execucao.md). As etapas abaixo resumem a inicialização do ambiente:
+No Windows, instale e abra Docker Desktop em modo Linux e execute **`iniciar-qlcstream.bat`**. O inicializador verifica requisitos e portas, preserva configurações existentes, prepara somente imagens ausentes e abre o navegador quando backend e interface respondem. Não é necessário preencher credenciais para abrir o [assistente em Configurar](docs/assistente-primeira-configuracao.md).
 
-1. Copie `.env.example` para `.env`.
-2. Preencha `TMDB_API_TOKEN` quando iniciar a integração com o catálogo.
-3. Execute `docker compose up --build`.
-4. Acesse `http://localhost:4200`.
+Para uso diário, execute o mesmo arquivo; para parar, use `docker compose stop`. Confira o [contrato, diagnóstico e opções administrativas](docs/inicializacao-windows.md). Em outros sistemas ou para administração manual, consulte o [guia completo](docs/primeira-execucao.md).
 
 O PostgreSQL fica disponível apenas para os demais contêineres. O endpoint de saúde do backend pode ser consultado em `http://localhost:8080/actuator/health`.
 

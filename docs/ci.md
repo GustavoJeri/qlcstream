@@ -7,3 +7,5 @@ O frontend usa o lockfile; o backend usa o Maven Wrapper. O workflow possui perm
 Para repetir localmente, use Java 21 e Node 26. No backend, execute `./mvnw verify` (Windows: `.\mvnw.cmd verify`). No frontend, execute `npm ci`, `npm test -- --watch=false` e `npm run build`. `npm ci` recria `node_modules`; para preservar dependências locais, use uma cópia de trabalho isolada.
 
 O CI informa resultados; para impedir merges sem aprovação dos checks, configure regras de proteção de branch no GitHub. Não há implantação ou publicação automática neste workflow.
+
+O job **Windows launcher** executa `docs/validation/Test-WindowsLauncher.ps1` no Windows PowerShell 5.1 e PowerShell 7, sem instalar dependências. Cobre classificação de falhas, preservação de configuração, preparação inicial, reutilização, portas TCP/UDP e bloqueio concorrente. Docker/HTTP/navegador são simulados; sockets e arquivos são reais. A prova com Docker Desktop, documentada em [inicialização no Windows](inicializacao-windows.md), é uma validação local separada e não faz parte deste job.

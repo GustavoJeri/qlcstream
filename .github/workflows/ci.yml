@@ -15,6 +15,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  windows-launcher:
+    name: Windows launcher
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Validar contrato no Windows PowerShell 5.1
+        shell: powershell
+        run: ./docs/validation/Test-WindowsLauncher.ps1
+      - name: Validar contrato no PowerShell 7
+        shell: pwsh
+        run: ./docs/validation/Test-WindowsLauncher.ps1
+
   backend:
     name: Backend
     runs-on: ubuntu-latest

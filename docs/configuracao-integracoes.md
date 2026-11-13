@@ -4,6 +4,8 @@ O backend permite preparar a configuração pela API. O [assistente visual da Is
 
 ## Precedência e atualização
 
+O [inicializador do Windows](inicializacao-windows.md) preserva `.env`, chave e configurações gerenciadas. Mudanças administrativas no ambiente exigem aplicação explícita ao backend; o uso diário não recria contêineres para aplicar variáveis novas.
+
 Cada integração começa com fonte `environment`, usando as propriedades existentes de TMDB, Prowlarr e qBittorrent. Nenhum valor é copiado automaticamente para o banco. O `.env` continua funcionando e não é alterado.
 
 Um PUT com `source: application` adota explicitamente a configuração gerenciada daquela integração. Campos omitidos são copiados da configuração efetiva atual nessa ação. Depois disso, o registro gerenciado inteiro tem precedência, inclusive campos vazios: não existe mistura automática com o ambiente. Mudanças posteriores no ambiente não alteram esse registro. `source: environment`, sozinho, remove o registro gerenciado e volta explicitamente ao ambiente carregado na inicialização.
