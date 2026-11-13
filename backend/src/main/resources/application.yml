@@ -34,4 +34,4 @@ qlc-stream:
     username: ${QBITTORRENT_USERNAME:}
     password: ${QBITTORRENT_PASSWORD:}
   storage:
-    media-root: ${MEDIA_ROOT:./data/media}
+    media-root: ${MEDIA_ROOT:/data}

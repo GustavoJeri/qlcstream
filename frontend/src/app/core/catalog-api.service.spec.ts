@@ -29,6 +29,7 @@ describe('CatalogApiService', () => {
       posterPath: '/poster.jpg',
       backdropPath: '/backdrop.jpg',
       voteAverage: 8.1,
+      popularity: null,
     }];
 
     service.trending().subscribe((result) => expect(result).toEqual(movies));

@@ -5,25 +5,20 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import dev.qlcstream.system.config.ProwlarrProperties;
-import dev.qlcstream.system.config.QbittorrentProperties;
-import dev.qlcstream.system.config.TmdbConfigurationProperties;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ResponseEntity;
 
 @RestController
 @RequestMapping("/api/system")
 class SystemStatusController {
 
-    private final TmdbConfigurationProperties tmdb;
-    private final ProwlarrProperties prowlarr;
-    private final QbittorrentProperties qbittorrent;
+    private final IntegrationDiagnostics diagnostics;
 
-    SystemStatusController(TmdbConfigurationProperties tmdb, ProwlarrProperties prowlarr, QbittorrentProperties qbittorrent) {
-        this.tmdb = tmdb;
-        this.prowlarr = prowlarr;
-        this.qbittorrent = qbittorrent;
+    SystemStatusController(IntegrationDiagnostics diagnostics) {
+        this.diagnostics = diagnostics;
     }
 
     @GetMapping("/status")
@@ -35,12 +30,12 @@ class SystemStatusController {
     }
 
     @GetMapping("/integrations")
-    List<IntegrationResponse> integrations() {
-        return List.of(
-                new IntegrationResponse("tmdb", tmdb.configured()),
-                new IntegrationResponse("prowlarr", prowlarr.configured()),
-                new IntegrationResponse("qbittorrent", qbittorrent.configured()));
+    ResponseEntity<List<IntegrationDiagnostics.Result>> integrations() {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(diagnostics.snapshot(false));
     }
 
-    record IntegrationResponse(String id, boolean configured) { }
+    @PostMapping("/integrations/check")
+    ResponseEntity<List<IntegrationDiagnostics.Result>> check() {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(diagnostics.snapshot(true));
+    }
 }
