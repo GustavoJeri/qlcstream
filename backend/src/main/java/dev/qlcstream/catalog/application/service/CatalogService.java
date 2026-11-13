@@ -34,41 +34,17 @@ public class CatalogService implements BrowseCatalogUseCase, ViewMovieDetailsUse
 
     @Override
     public CatalogPage<Movie> trending(String language, int page, CatalogSort sort) {
-        return sort(persist(metadataProvider.trending(language, page, sort)), sort);
+        return persist(metadataProvider.trending(language, page, null));
     }
 
     @Override
     public CatalogPage<Movie> discover(CatalogCollection collection, String language, int page, CatalogSort sort) {
-        return sort(persist(metadataProvider.discover(collection, language, page, sort)), sort);
+        return persist(metadataProvider.discover(collection, language, page, sort));
     }
 
     @Override
     public CatalogPage<Movie> search(String query, String language, int page, CatalogSort sort) {
-        return sort(persist(metadataProvider.search(query, language, page, sort)), sort);
-    }
-
-    private CatalogPage<Movie> sort(CatalogPage<Movie> page, CatalogSort sort) {
-        if (sort == null) return page;
-        var comparator = switch (sort) {
-            case POPULARITY -> java.util.Comparator.comparing(Movie::popularity, java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()));
-            case RATING -> java.util.Comparator.comparing(Movie::voteAverage, java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()));
-            case NEWEST -> java.util.Comparator.comparing(Movie::releaseDate, java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()));
-            case OLDEST -> java.util.Comparator.comparing(Movie::releaseDate, java.util.Comparator.nullsLast(java.time.LocalDate::compareTo));
-            case TITLE -> java.util.Comparator.comparing(Movie::title, java.text.Collator.getInstance(java.util.Locale.forLanguageTag("pt-BR")));
-        };
-        return new CatalogPage<>(page.items().stream().sorted(comparator.thenComparing(Movie::tmdbId)).toList(), page.page(), page.totalPages(), page.totalResults());
-    }
-
-    private CatalogPage<Series> sortSeries(CatalogPage<Series> page, CatalogSort sort) {
-        if (sort == null) return page;
-        var comparator = switch (sort) {
-            case POPULARITY -> java.util.Comparator.comparing(Series::popularity, java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()));
-            case RATING -> java.util.Comparator.comparing(Series::voteAverage, java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()));
-            case NEWEST -> java.util.Comparator.comparing(Series::firstAirDate, java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()));
-            case OLDEST -> java.util.Comparator.comparing(Series::firstAirDate, java.util.Comparator.nullsLast(java.time.LocalDate::compareTo));
-            case TITLE -> java.util.Comparator.comparing(Series::name, java.text.Collator.getInstance(java.util.Locale.forLanguageTag("pt-BR")));
-        };
-        return new CatalogPage<>(page.items().stream().sorted(comparator.thenComparing(Series::tmdbId)).toList(), page.page(), page.totalPages(), page.totalResults());
+        return persist(metadataProvider.search(query, language, page, null));
     }
 
     private CatalogPage<Movie> persist(CatalogPage<Movie> page) {
@@ -126,10 +102,15 @@ public class CatalogService implements BrowseCatalogUseCase, ViewMovieDetailsUse
     }
 
     @Transactional(readOnly = true)
-    public CatalogPage<Series> trendingSeries(String language, int page, CatalogSort sort) { return sortSeries(metadataProvider.trendingSeries(language, page, sort), sort); }
+    public CatalogPage<Series> trendingSeries(String language, int page, CatalogSort sort) { return metadataProvider.trendingSeries(language, page, null); }
 
     @Transactional(readOnly = true)
-    public CatalogPage<Series> searchSeries(String query, String language, int page, CatalogSort sort) { return sortSeries(metadataProvider.searchSeries(query, language, page, sort), sort); }
+    public CatalogPage<Series> discoverSeries(CatalogCollection collection, String language, int page, CatalogSort sort) {
+        return metadataProvider.discoverSeries(collection, language, page, sort);
+    }
+
+    @Transactional(readOnly = true)
+    public CatalogPage<Series> searchSeries(String query, String language, int page, CatalogSort sort) { return metadataProvider.searchSeries(query, language, page, null); }
 
     @Transactional(readOnly = true)
     public SeriesDetails seriesDetails(long tmdbId, String language) { return metadataProvider.seriesDetails(tmdbId, language); }

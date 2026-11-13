@@ -7,7 +7,6 @@ export interface CatalogNavigationSnapshot {
   lastSubmittedQuery: string;
   activeFilter: CatalogCollection;
   sortBy: CatalogSort;
-  sortTouched: boolean;
   movies: CatalogMovie[];
   unavailablePosterIds: number[];
   currentPage: number;

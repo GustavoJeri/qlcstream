@@ -59,7 +59,7 @@ public class CatalogController {
             @RequestParam(defaultValue = "POPULAR") CatalogCollection collection,
             @RequestParam(defaultValue = "pt-BR") String language,
             @RequestParam(defaultValue = "1") @Min(1) @Max(500) int page,
-            @RequestParam(defaultValue = "POPULARITY") CatalogSort sort) {
+            @RequestParam(required = false) CatalogSort sort) {
         return CatalogPageResponse.from(browseCatalog.discover(collection, language, page, sort), CatalogMovieResponse::from);
     }
 
@@ -98,6 +98,15 @@ public class CatalogController {
             @RequestParam(defaultValue = "1") @Min(1) @Max(500) int page,
             @RequestParam(defaultValue = "POPULARITY") CatalogSort sort) {
         return CatalogPageResponse.from(catalogService.trendingSeries(language, page, sort), SeriesResponse::from);
+    }
+
+    @GetMapping("/series/discover")
+    CatalogPageResponse<SeriesResponse> discoverSeries(
+            @RequestParam(defaultValue = "POPULAR") CatalogCollection collection,
+            @RequestParam(defaultValue = "pt-BR") String language,
+            @RequestParam(defaultValue = "1") @Min(1) @Max(500) int page,
+            @RequestParam(required = false) CatalogSort sort) {
+        return CatalogPageResponse.from(catalogService.discoverSeries(collection, language, page, sort), SeriesResponse::from);
     }
 
     @GetMapping("/series/search")

@@ -33,6 +33,10 @@ public interface MovieMetadataProvider {
 
     default CatalogPage<Series> trendingSeries(String language, int page, CatalogSort sort) { return new CatalogPage<>(List.of(), page, 1, 0); }
 
+    default CatalogPage<Series> discoverSeries(CatalogCollection collection, String language, int page, CatalogSort sort) {
+        return new CatalogPage<>(List.of(), page, 1, 0);
+    }
+
     default CatalogPage<Series> searchSeries(String query, String language, int page, CatalogSort sort) { return new CatalogPage<>(List.of(), page, 1, 0); }
 
     default SeriesDetails seriesDetails(long tmdbId, String language) {

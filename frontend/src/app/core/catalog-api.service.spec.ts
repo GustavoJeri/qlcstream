@@ -38,7 +38,7 @@ describe('CatalogApiService', () => {
     const request = http.expectOne((candidate) => candidate.url === '/api/catalog/trending');
     expect(request.request.params.get('language')).toBe('pt-BR');
     expect(request.request.params.get('page')).toBe('1');
-    expect(request.request.params.get('sort')).toBe('POPULARITY');
+    expect(request.request.params.has('sort')).toBe(false);
     request.flush(page);
   });
 

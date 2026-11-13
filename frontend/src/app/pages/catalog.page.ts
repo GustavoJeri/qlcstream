@@ -2,7 +2,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { Observable, Subject, Subscription, catchError, debounceTime, distinctUntilChanged, forkJoin, map, of, switchMap } from 'rxjs';
+import { Observable, Subject, Subscription, catchError, debounceTime, forkJoin, map, of, switchMap } from 'rxjs';
 
 import { CatalogApiService, CatalogCollection, CatalogMovie, CatalogPageResponse, CatalogSort, PersonalizedRecommendation } from '../core/catalog-api.service';
 import { tmdbImage, tmdbPosterSrcset } from '../core/tmdb-image';
@@ -83,7 +83,7 @@ import { CatalogNavigationSnapshot, CatalogNavigationStateService } from '../cor
       <section aria-labelledby="popular-title">
         <div class="section-heading">
           <h2 id="popular-title">{{ sectionTitle() }}</h2>
-          <div class="catalog-tools"><span class="catalog-count">{{ displayedMovies().length }} filmes</span><label class="catalog-sort"><span>Ordenar</span><select [value]="sortBy()" (change)="setSort($event)"><option value="POPULARITY">Popularidade</option><option value="RATING">Melhor nota</option><option value="NEWEST">Lançamentos recentes</option><option value="OLDEST">Ano mais antigo</option><option value="TITLE">Título A-Z</option></select></label></div>
+          <div class="catalog-tools"><span class="catalog-count">{{ displayedMovies().length }} filmes</span>@if (!lastSubmittedQuery()) { <label class="catalog-sort"><span>Ordenar</span><select [value]="sortBy()" (change)="setSort($event)"><option value="POPULARITY">Popularidade</option><option value="RATING">Melhor nota</option><option value="NEWEST">Lançamentos recentes</option><option value="OLDEST">Ano mais antigo</option><option value="TITLE">Título A-Z</option></select></label> }</div>
         </div>
 
         @switch (viewState()) {
@@ -152,7 +152,6 @@ export class CatalogPage {
   private readonly navigationState = inject(CatalogNavigationStateService);
   private activeRequest?: Subscription;
   private spotlightTimer?: ReturnType<typeof setInterval>;
-  private requestVersion = 0;
   private readonly queryChanges = new Subject<string>();
 
   readonly filters: ReadonlyArray<{ collection: CatalogCollection; label: string }> = [
@@ -180,8 +179,7 @@ export class CatalogPage {
   readonly recommendedForYou = signal<PersonalizedRecommendation[]>([]);
   readonly recommendationPage = signal(0);
   readonly refreshingRecommendations = signal(false);
-  readonly sortTouched = signal(false);
-  readonly sortBy = signal<'POPULARITY' | 'RATING' | 'NEWEST' | 'OLDEST' | 'TITLE'>('POPULARITY');
+  readonly sortBy = signal<CatalogSort>('POPULARITY');
   readonly spotlightIndex = signal(0);
   readonly spotlightCycle = signal(0);
   readonly sectionTitle = computed(() => {
@@ -205,16 +203,18 @@ export class CatalogPage {
     }
     this.queryChanges.pipe(
       debounceTime(260),
-      distinctUntilChanged(),
       takeUntilDestroyed(this.destroyRef),
     ).subscribe((query) => {
-      const normalized = query.replace(/\s+/g, ' ').trim();
+      if (query !== this.query().replace(/\s+/g, ' ').trim()) return;
+      const normalized = query.length >= 2 ? query : '';
+      if (normalized === this.lastSubmittedQuery()) return;
       this.lastSubmittedQuery.set(normalized);
-      this.load(normalized.length >= 2 ? this.catalogApi.search(normalized, 'pt-BR', 1, this.sortTouched() ? this.sortBy() : undefined) : this.catalogApi.discover(this.activeFilter(), 'pt-BR', 1, this.sortBy()));
+      this.load(normalized.length >= 2 ? this.catalogApi.search(normalized) : this.catalogApi.discover(this.activeFilter(), 'pt-BR', 1, this.sortBy()));
     });
     this.destroyRef.onDestroy(() => this.saveNavigationState());
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
-      const query = params.get('q')?.trim() ?? '';
+      const input = params.get('q')?.replace(/\s+/g, ' ').trim() ?? '';
+      const query = input.length >= 2 ? input : '';
       const restored = this.navigationState.restoreFor(query);
       if (restored) {
         this.restoreNavigationState(restored);
@@ -223,7 +223,7 @@ export class CatalogPage {
       this.query.set(query);
       if (query) {
         this.lastSubmittedQuery.set(query);
-        this.load(this.catalogApi.search(query, 'pt-BR', 1, this.sortTouched() ? this.sortBy() : undefined));
+        this.load(this.catalogApi.search(query));
       } else {
         this.loadTrending();
       }
@@ -237,7 +237,8 @@ export class CatalogPage {
   }
 
   search(): void {
-    const query = this.query().trim();
+    const input = this.query().replace(/\s+/g, ' ').trim();
+    const query = input.length >= 2 ? input : '';
     if (query === this.lastSubmittedQuery()) {
       this.retry();
       return;
@@ -251,24 +252,24 @@ export class CatalogPage {
 
   retry(): void {
     const query = this.lastSubmittedQuery();
-    this.load(query ? this.catalogApi.search(query, 'pt-BR', 1, this.sortTouched() ? this.sortBy() : undefined) : this.catalogApi.discover(this.activeFilter(), 'pt-BR', 1, this.sortBy()));
+    this.load(query ? this.catalogApi.search(query) : this.catalogApi.discover(this.activeFilter(), 'pt-BR', 1, this.sortBy()));
   }
 
   selectFilter(collection: CatalogCollection): void {
-    if (this.lastSubmittedQuery()) {
-      this.activeFilter.set(collection);
-      this.clearSearch();
-      return;
-    }
-    if (collection === this.activeFilter()) {
-      return;
-    }
+    if (collection === this.activeFilter() && !this.query() && !this.lastSubmittedQuery()) return;
     this.activeFilter.set(collection);
-    this.loadCollection();
+    this.sortBy.set(collection === 'TOP_RATED' ? 'RATING' : collection === 'RECENT' ? 'NEWEST' : 'POPULARITY');
+    if (this.query() || this.lastSubmittedQuery()) this.clearSearch();
+    else this.loadCollection();
   }
 
   clearSearch(): void {
     this.query.set('');
+    this.queryChanges.next('');
+    if (!this.route.snapshot.queryParamMap.has('q')) {
+      this.loadTrending();
+      return;
+    }
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { q: null },
@@ -315,27 +316,22 @@ export class CatalogPage {
   }
 
   loadMore(): void {
-    if (this.loadingMoreMovies() || !this.hasMoreMovies()) return;
+    if (this.viewState() !== 'ready' || this.loadingMoreMovies() || !this.hasMoreMovies()) return;
     const nextPage = this.currentPage() + 1;
-    const requestVersion = this.requestVersion;
     const query = this.lastSubmittedQuery();
     const request = query
-      ? this.catalogApi.search(query, 'pt-BR', nextPage, this.sortTouched() ? this.sortBy() : undefined)
+      ? this.catalogApi.search(query, 'pt-BR', nextPage)
       : this.catalogApi.discover(this.activeFilter(), 'pt-BR', nextPage, this.sortBy());
     this.loadingMoreMovies.set(true);
-    request.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.activeRequest = request.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (page) => {
-        if (requestVersion !== this.requestVersion) return;
-        this.movies.update((current) => {
-          const existingIds = new Set(current.map((item) => item.tmdbId));
-          return [...current, ...page.items.filter((item) => !existingIds.has(item.tmdbId))];
-        });
+        this.movies.update((current) => this.uniqueMovies([...current, ...page.items]));
         this.currentPage.set(page.page);
         this.hasMoreMovies.set(page.hasNext);
         this.loadingMoreMovies.set(false);
       },
       error: () => {
-        if (requestVersion === this.requestVersion) this.loadingMoreMovies.set(false);
+        this.loadingMoreMovies.set(false);
       },
     });
   }
@@ -353,7 +349,6 @@ export class CatalogPage {
   }
 
   setSort(event: Event): void {
-    this.sortTouched.set(true);
     this.sortBy.set((event.target as HTMLSelectElement).value as CatalogSort);
     this.retry();
   }
@@ -386,14 +381,13 @@ export class CatalogPage {
   }
 
   private load(request: Observable<CatalogPageResponse<CatalogMovie>>): void {
-    const requestVersion = ++this.requestVersion;
     this.activeRequest?.unsubscribe();
     this.viewState.set('loading');
+    this.loadingMoreMovies.set(false);
     this.configurationMissing.set(false);
     this.unavailablePosterIds.set(new Set());
     this.activeRequest = request.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (page) => {
-        if (requestVersion !== this.requestVersion) return;
         this.movies.set(this.uniqueMovies(page.items));
         this.spotlightIndex.set(0);
         this.currentPage.set(page.page);
@@ -409,7 +403,6 @@ export class CatalogPage {
         this.loadPersonalizedRecommendations();
       },
       error: (error: unknown) => {
-        if (requestVersion !== this.requestVersion) return;
         this.movies.set([]);
         this.describeError(error);
         this.viewState.set('error');
@@ -449,7 +442,6 @@ export class CatalogPage {
       lastSubmittedQuery: this.lastSubmittedQuery(),
       activeFilter: this.activeFilter(),
       sortBy: this.sortBy(),
-      sortTouched: this.sortTouched(),
       movies: this.movies(),
       unavailablePosterIds: [...this.unavailablePosterIds()],
       currentPage: this.currentPage(),
@@ -459,11 +451,11 @@ export class CatalogPage {
   }
 
   private restoreNavigationState(snapshot: CatalogNavigationSnapshot): void {
+    this.activeRequest?.unsubscribe();
     this.query.set(snapshot.query);
     this.lastSubmittedQuery.set(snapshot.lastSubmittedQuery);
     this.activeFilter.set(snapshot.activeFilter);
     this.sortBy.set(snapshot.sortBy);
-    this.sortTouched.set(snapshot.sortTouched);
     this.movies.set(snapshot.movies);
     this.unavailablePosterIds.set(new Set(snapshot.unavailablePosterIds));
     this.currentPage.set(snapshot.currentPage);

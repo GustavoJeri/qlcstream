@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.util.UriBuilder;
 
 import dev.qlcstream.catalog.application.port.out.MovieMetadataProvider;
 import dev.qlcstream.catalog.domain.CatalogCollection;
@@ -69,36 +70,57 @@ public class TmdbMovieAdapter implements MovieMetadataProvider {
     @Override
     public CatalogPage<Movie> discover(CatalogCollection collection, String language, int page, CatalogSort sort) {
         var configuration = requireConfiguration();
-        return cache.get(cache.key(configuration, "discover-movie", collection, language, page, sort), cache.catalogTtl(), () -> {
-        var request = client(configuration).get()
-                .uri(uri -> {
-                    var builder = uri.path("/discover/movie")
-                            .queryParam("language", language)
-                            .queryParam("page", page)
-                            .queryParam("include_adult", false)
-                            .queryParam("include_video", false);
-                    switch (collection) {
-                        case POPULAR -> builder
-                                .queryParam("sort_by", "popularity.desc")
-                                .queryParam("vote_count.gte", 100);
-                        case TOP_RATED -> builder
-                                .queryParam("sort_by", "vote_average.desc")
-                                .queryParam("vote_count.gte", 500);
-                        case ESTABLISHED -> builder
-                                .queryParam("sort_by", "popularity.desc")
-                                .queryParam("vote_count.gte", 100)
-                                .queryParam("primary_release_date.lte", LocalDate.now().minusYears(2));
-                        case RECENT -> builder
-                                .queryParam("sort_by", "primary_release_date.desc")
-                                .queryParam("primary_release_date.lte", LocalDate.now());
-                    }
-                    return builder.build();
-                })
-                .header(HttpHeaders.AUTHORIZATION, "Bearer " + configuration.apiToken())
-                .retrieve()
-                .body(TmdbMoviePage.class);
-        return map(request);
-        });
+        return cache.get(cache.key(configuration, "discover-movie", collection, language, page, sort),
+                cache.catalogTtl(), () -> {
+                    var response = client(configuration).get()
+                            .uri(uri -> discoveryQuery(uri.path("/discover/movie").queryParam("include_video", false),
+                                    collection, language, page, sort, "primary_release_date", "title").build())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + configuration.apiToken())
+                            .retrieve().body(TmdbMoviePage.class);
+                    return map(response);
+                });
+    }
+
+    @Override
+    public CatalogPage<Series> discoverSeries(CatalogCollection collection, String language, int page, CatalogSort sort) {
+        var configuration = requireConfiguration();
+        return cache.get(cache.key(configuration, "discover-series", collection, language, page, sort),
+                cache.catalogTtl(), () -> {
+                    var response = client(configuration).get()
+                            .uri(uri -> discoveryQuery(uri.path("/discover/tv").queryParam("include_null_first_air_dates", false),
+                                    collection, language, page, sort, "first_air_date", "name").build())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + configuration.apiToken())
+                            .retrieve().body(TmdbSeriesPage.class);
+                    return map(response);
+                });
+    }
+
+    private UriBuilder discoveryQuery(UriBuilder uri, CatalogCollection collection, String language,
+                                      int page, CatalogSort sort, String dateField, String titleField) {
+        var defaultSort = switch (collection) {
+            case TOP_RATED -> CatalogSort.RATING;
+            case RECENT -> CatalogSort.NEWEST;
+            default -> CatalogSort.POPULARITY;
+        };
+        var effectiveSort = sort == null ? defaultSort : sort;
+        String sortBy = switch (effectiveSort) {
+            case POPULARITY -> "popularity.desc";
+            case RATING -> "vote_average.desc";
+            case NEWEST -> dateField + ".desc";
+            case OLDEST -> dateField + ".asc";
+            case TITLE -> titleField + ".asc";
+        };
+        uri.queryParam("language", language).queryParam("page", page)
+                .queryParam("include_adult", false)
+                .queryParam("sort_by", sortBy);
+        switch (collection) {
+            case POPULAR -> uri.queryParam("vote_count.gte", 100);
+            case TOP_RATED -> uri.queryParam("vote_count.gte", 500);
+            case ESTABLISHED -> uri.queryParam("vote_count.gte", 100)
+                    .queryParam(dateField + ".lte", LocalDate.now().minusYears(2));
+            case RECENT -> uri.queryParam(dateField + ".lte", LocalDate.now());
+        }
+        return uri;
     }
 
     @Override

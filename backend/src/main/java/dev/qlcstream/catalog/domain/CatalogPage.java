@@ -6,7 +6,7 @@ public record CatalogPage<T>(List<T> items, int page, int totalPages, long total
     public CatalogPage {
         items = items == null ? List.of() : List.copyOf(items);
         page = Math.max(page, 1);
-        totalPages = Math.max(totalPages, 1);
+        totalPages = Math.clamp(totalPages, 1, 500);
         totalResults = Math.max(totalResults, 0);
     }
 

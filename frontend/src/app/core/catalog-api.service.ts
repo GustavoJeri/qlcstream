@@ -42,15 +42,15 @@ export interface CatalogPageResponse<T> { items: T[]; page: number; totalPages: 
 export class CatalogApiService {
   private readonly http = inject(HttpClient);
 
-  trending(language = 'pt-BR', page = 1, sort: CatalogSort = 'POPULARITY'): Observable<CatalogPageResponse<CatalogMovie>> {
+  trending(language = 'pt-BR', page = 1): Observable<CatalogPageResponse<CatalogMovie>> {
     return this.http.get<CatalogPageResponse<CatalogMovie>>(apiUrl('/api/catalog/trending'), {
-      params: { language, page, sort },
+      params: { language, page },
     });
   }
 
-  discover(collection: CatalogCollection, language = 'pt-BR', page = 1, sort: CatalogSort = 'POPULARITY'): Observable<CatalogPageResponse<CatalogMovie>> {
+  discover(collection: CatalogCollection, language = 'pt-BR', page = 1, sort?: CatalogSort): Observable<CatalogPageResponse<CatalogMovie>> {
     return this.http.get<CatalogPageResponse<CatalogMovie>>(apiUrl('/api/catalog/discover'), {
-      params: { collection, language, page, sort },
+      params: sort ? { collection, language, page, sort } : { collection, language, page },
     });
   }
 
@@ -71,7 +71,12 @@ export class CatalogApiService {
   }
   searchPeople(query: string, language = 'pt-BR'): Observable<CatalogPerson[]> { return this.http.get<CatalogPerson[]>(apiUrl('/api/catalog/people/search'), { params: { query, language } }); }
   personDetails(tmdbId: number, language = 'pt-BR'): Observable<PersonDetails> { return this.http.get<PersonDetails>(apiUrl(`/api/catalog/people/${tmdbId}`), { params: { language } }); }
-  trendingSeries(language = 'pt-BR', page = 1, sort: CatalogSort = 'POPULARITY'): Observable<CatalogPageResponse<CatalogSeries>> { return this.http.get<CatalogPageResponse<CatalogSeries>>(apiUrl('/api/catalog/series/trending'), { params: { language, page, sort } }); }
+  trendingSeries(language = 'pt-BR', page = 1): Observable<CatalogPageResponse<CatalogSeries>> { return this.http.get<CatalogPageResponse<CatalogSeries>>(apiUrl('/api/catalog/series/trending'), { params: { language, page } }); }
+  discoverSeries(collection: CatalogCollection, language = 'pt-BR', page = 1, sort?: CatalogSort): Observable<CatalogPageResponse<CatalogSeries>> {
+    return this.http.get<CatalogPageResponse<CatalogSeries>>(apiUrl('/api/catalog/series/discover'), {
+      params: sort ? { collection, language, page, sort } : { collection, language, page },
+    });
+  }
   searchSeries(query: string, language = 'pt-BR', page = 1, sort?: CatalogSort): Observable<CatalogPageResponse<CatalogSeries>> { return this.http.get<CatalogPageResponse<CatalogSeries>>(apiUrl('/api/catalog/series/search'), { params: sort ? { query, language, page, sort } : { query, language, page } }); }
   seriesDetails(tmdbId: number, language = 'pt-BR'): Observable<SeriesDetails> { return this.http.get<SeriesDetails>(apiUrl(`/api/catalog/series/${tmdbId}`), { params: { language } }); }
   seasonDetails(seriesTmdbId: number, seasonNumber: number, language = 'pt-BR'): Observable<SeasonDetails> { return this.http.get<SeasonDetails>(apiUrl(`/api/catalog/series/${seriesTmdbId}/seasons/${seasonNumber}`), { params: { language } }); }
