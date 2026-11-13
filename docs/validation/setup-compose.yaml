@@ -1,7 +1,7 @@
 name: qlcstream-setup-test
 services:
   database:
-    image: postgres:18.6-alpine
+    image: postgres:18.6-alpine@sha256:9ba53c7d41ea093baf5c1ba635ba5434c4f979880527d49bb7d9237d3193085b
     environment:
       POSTGRES_DB: setup_test
       POSTGRES_USER: setup_test
@@ -13,13 +13,13 @@ services:
       timeout: 2s
       retries: 30
   fixture:
-    image: postgres:18.6-alpine
+    image: postgres:18.6-alpine@sha256:9ba53c7d41ea093baf5c1ba635ba5434c4f979880527d49bb7d9237d3193085b
     user: root
     entrypoint: /bin/sh
     command: [/prepare-directories.sh]
     volumes: [keys:/secrets, media:/media, ../../backend/docker/prepare-directories.sh:/prepare-directories.sh:ro]
   mock:
-    image: python:3.13-alpine
+    image: python:3.13-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e
     command: [python, /fixture/mock-integrations.py]
     volumes: [./mock-integrations.py:/fixture/mock-integrations.py:ro]
   backend:

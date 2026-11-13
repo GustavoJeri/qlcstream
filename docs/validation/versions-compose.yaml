@@ -1,0 +1,91 @@
+# Only named synthetic volumes; no host ports, personal mounts or external network.
+services:
+  prepare:
+    image: python:3.13-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e
+    network_mode: none
+    command: [python, /fixture/versions-fixture.py, prepare]
+    volumes:
+      - .:/fixture:ro
+      - engine:/engine
+      - seed:/seed
+      - prowlarr:/prowlarr
+      - payload:/payload
+      - media:/media
+      - keys:/keys
+  database:
+    image: postgres:18.6-alpine@sha256:9ba53c7d41ea093baf5c1ba635ba5434c4f979880527d49bb7d9237d3193085b
+    environment:
+      POSTGRES_DB: versions_test
+      POSTGRES_USER: versions_test
+      POSTGRES_PASSWORD: fictional_database_password
+    volumes: [database:/var/lib/postgresql]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U versions_test -d versions_test]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  qbittorrent:
+    image: qbittorrentofficial/qbittorrent-nox:5.3.0-2@sha256:43b2d352cf76330a7ca34c7320b9b74227d6f31e662e0e123d0457206b09a7ea
+    environment:
+      QBT_LEGAL_NOTICE: confirm
+      QBT_WEBUI_PORT: 8080
+      QBT_TORRENTING_PORT: 6881
+    stop_grace_period: 30m
+    volumes: [engine:/config, media:/downloads]
+  seeder:
+    image: qbittorrentofficial/qbittorrent-nox:5.3.0-2@sha256:43b2d352cf76330a7ca34c7320b9b74227d6f31e662e0e123d0457206b09a7ea
+    environment:
+      QBT_LEGAL_NOTICE: confirm
+      QBT_WEBUI_PORT: 8080
+      QBT_TORRENTING_PORT: 6881
+    stop_grace_period: 30m
+    volumes: [seed:/config, payload:/downloads:ro]
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:2.7.0.5723-ls168@sha256:6660787a99b2e58203539583663c973b48979fc00ff2cb78dc0ea17429e1f6ef
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: America/Fortaleza
+    volumes: [prowlarr:/config]
+  source:
+    image: python:3.13-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e
+    command: [python, /fixture/versions-fixture.py, serve]
+    volumes: [.:/fixture:ro, payload:/payload:ro]
+  backend:
+    build: ../../backend
+    group_add: ["1000"]
+    environment:
+      DB_URL: jdbc:postgresql://database:5432/versions_test
+      DB_USER: versions_test
+      DB_PASSWORD: fictional_database_password
+      MEDIA_ROOT: /data
+      INTEGRATION_SETTINGS_KEY_FILE: /run/keys/integration-settings.key
+    volumes: [media:/data, keys:/run/keys]
+    depends_on:
+      database:
+        condition: service_healthy
+  runner:
+    image: python:3.13-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e
+    command: [python, /fixture/versions-fixture.py, test-existing]
+    volumes:
+      - .:/fixture:ro
+      - ../../scripts:/scripts:ro
+      - media:/media
+      - payload:/payload:ro
+  inspect:
+    image: python:3.13-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e
+    user: root
+    network_mode: none
+    entrypoint: [python]
+    volumes: [engine:/engine, seed:/seed, prowlarr:/prowlarr, payload:/payload, media:/media, keys:/keys]
+volumes:
+  database:
+  engine:
+  seed:
+  prowlarr:
+  payload:
+  media:
+  keys:
+networks:
+  default:
+    internal: true

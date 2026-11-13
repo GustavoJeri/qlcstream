@@ -1,5 +1,7 @@
 # Diagnóstico das conexões — Issue #15
 
+Conectividade autenticada não certifica a revisão da imagem. Consulte a [matriz e o verificador de versão](versoes-integracoes.md) para comparar a aplicação executada e a referência esperada; essa conferência separada não atualiza serviços.
+
 Em **Configurações**, o aplicativo verifica as conexões com TMDB, Prowlarr e qBittorrent. Campos preenchidos não comprovam disponibilidade. Cada linha mostra o resultado, uma orientação de recuperação e o horário da última tentativa concluída. O contador de conexões verificadas exige resultados bem-sucedidos dentro da validade. Após a integração da Issue #16, três conexões disponíveis não bastam para anunciar “Tudo pronto”: a pasta tem um [diagnóstico separado](diagnostico-armazenamento.md), que mantém o compartilhamento físico inconclusivo sem prova. A verificação das conexões não valida indexadores nem fontes de download.
 
 ## Contrato da API

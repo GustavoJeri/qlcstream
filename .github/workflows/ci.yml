@@ -15,6 +15,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  integration-versions:
+    name: Integration versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Testar relato de versao e divergencia
+        run: python3 docs/validation/test-version-checker.py
+      - name: Validar imagens reais em rede interna e copia sintetica
+        run: python3 docs/validation/test-integration-versions.py
+      - name: Guardar resultados sinteticos
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: integration-version-results
+          path: data/versions-validation-*/*.json
+          if-no-files-found: ignore
+          retention-days: 7
+
   windows-launcher:
     name: Windows launcher
     runs-on: windows-latest

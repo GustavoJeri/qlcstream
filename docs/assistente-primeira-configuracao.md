@@ -1,5 +1,7 @@
 # Assistente de primeira configuração — Issue #18
 
+As imagens do Compose e os limites de compatibilidade estão na [matriz das integrações](versoes-integracoes.md). O assistente testa as conexões; conferir a versão e a revisão da imagem é uma ação administrativa separada. Configurações existentes continuam exigindo adoção explícita.
+
 No Windows, use o [inicializador oficial](inicializacao-windows.md) `iniciar-qlcstream.bat` para chegar ao aplicativo sem exigir credenciais prévias. O inicializador não provisiona a chave nem altera integrações.
 
 Em **Configurar** (`/setup`), o aplicativo oferece etapas para catálogo, busca de fontes, motor e pasta. Um aviso convida a conferir configurações incompletas e problemas na pasta; o catálogo continua acessível quando busca ou downloads são adiados. Filmes, temporadas e episódios explicam a indisponibilidade das ações e apontam para o assistente.
