@@ -15,6 +15,7 @@ import { apiUrl } from '../core/api-url';
   template: `
     <div class="page downloads-page">
       <header class="page-heading"><div><h1>Downloads</h1><p>Acompanhe transferências e organize o que entra na biblioteca.</p></div><button class="icon-button" type="button" aria-label="Atualizar downloads" (click)="load()"><i class="ph ph-arrows-clockwise"></i></button></header>
+      @if (actionError()) { <p class="action-error" role="alert">{{ actionError() }}</p> }
       @if (state() === 'loading') {
         <section class="downloads-state" aria-live="polite"><i class="ph ph-spinner-gap"></i><p>Consultando transferências.</p></section>
       } @else if (state() === 'error') {
@@ -27,7 +28,7 @@ import { apiUrl } from '../core/api-url';
                 @if (download.posterPath) { <img [src]="posterUrl(download)" [alt]="'Pôster de ' + download.movieTitle" loading="lazy" decoding="async" /> } @else { <i class="ph" [class.ph-television]="download.mediaType === 'SERIES'" [class.ph-film-strip]="download.mediaType !== 'SERIES'"></i> }
               </a>
               <div class="download-info"><a [routerLink]="[download.mediaType === 'SERIES' ? '/series' : '/catalog', download.movieTmdbId]">{{ download.movieTitle }}</a><p>{{ download.releaseTitle }}</p><div class="download-tags"><span>{{ quality(download) }}</span><span>{{ status(download.status) }}</span></div></div>
-              <div class="download-progress"><div><strong>{{ percent(download.progress) }}</strong><span>{{ transferMeta(download) }}</span></div><div class="progress-track"><span [style.width.%]="download.progress * 100"></span></div><div class="download-actions">@if (download.status === 'ERROR') { <button class="text-action retry-action" type="button" [disabled]="controllingId() === download.id" (click)="control(download, 'retry')"><i class="ph ph-arrow-clockwise"></i>Tentar novamente</button> } @else if (download.status === 'PAUSED') { <button class="text-action" type="button" [disabled]="controllingId() === download.id" (click)="control(download, 'resume')">Retomar</button> } @else if (canPause(download.status)) { <button class="text-action" type="button" [disabled]="controllingId() === download.id" (click)="control(download, 'pause')">Pausar</button> } @if (canPrioritize(download.status)) { <span class="priority-actions" aria-label="Prioridade"><button type="button" [disabled]="controllingId() === download.id" aria-label="Aumentar prioridade" (click)="control(download, 'priority_up')"><i class="ph ph-caret-up"></i></button><button type="button" [disabled]="controllingId() === download.id" aria-label="Diminuir prioridade" (click)="control(download, 'priority_down')"><i class="ph ph-caret-down"></i></button></span> } <button class="text-action danger-action" type="button" [disabled]="controllingId() === download.id" (click)="control(download, 'cancel')">Cancelar</button></div></div>
+              <div class="download-progress"><div><strong>{{ percent(download.progress) }}</strong><span>{{ transferMeta(download) }}</span></div><div class="progress-track"><span [style.width.%]="download.progress * 100"></span></div><div class="download-actions">@if (download.status === 'ERROR') { <button class="text-action retry-action" type="button" [disabled]="pendingIds().has(download.id)" (click)="control(download, 'retry')"><i class="ph ph-arrow-clockwise"></i>Tentar novamente</button> } @else if (download.status === 'PAUSED') { <button class="text-action" type="button" [disabled]="pendingIds().has(download.id)" (click)="control(download, 'resume')">Retomar</button> } @else if (canPause(download.status)) { <button class="text-action" type="button" [disabled]="pendingIds().has(download.id)" (click)="control(download, 'pause')">Pausar</button> } @if (canPrioritize(download.status)) { <span class="priority-actions" aria-label="Prioridade"><button type="button" [disabled]="pendingIds().has(download.id)" aria-label="Aumentar prioridade" (click)="control(download, 'priority_up')"><i class="ph ph-caret-up"></i></button><button type="button" [disabled]="pendingIds().has(download.id)" aria-label="Diminuir prioridade" (click)="control(download, 'priority_down')"><i class="ph ph-caret-down"></i></button></span> } <button class="text-action danger-action" type="button" [disabled]="pendingIds().has(download.id)" (click)="control(download, 'cancel')">Cancelar</button></div></div>
             </article>
           }
         </section>
@@ -45,6 +46,8 @@ export class DownloadsPage {
   private readonly destroyRef = inject(DestroyRef);
   readonly state = signal<'loading' | 'ready' | 'error'>('loading');
   readonly downloads = signal<DownloadSummary[]>([]);
+  readonly actionError = signal('');
+  readonly pendingIds = signal(new Set<string>());
   readonly errorMessage = signal('Confira a conexão com o backend e tente novamente.');
   readonly controllingId = signal<string | null>(null);
 
@@ -57,15 +60,30 @@ export class DownloadsPage {
   transferMeta(download: DownloadSummary): string {
     if (download.status === 'SEEDING') return 'Concluído e compartilhando';
     if (download.status === 'COMPLETED') return 'Concluído';
+    if (download.status === 'ERROR') return 'Falha na transferência. Tente retomar ou cancele esta tentativa.';
+    if (download.status === 'STALLED') return 'Sem fontes disponíveis no momento';
+    if (download.status === 'PAUSED') return 'Transferência pausada';
     return [download.downloadSpeedBps ? `${this.formatBytes(download.downloadSpeedBps)}/s` : null, download.etaSeconds ? `restam ${this.formatEta(download.etaSeconds)}` : null].filter(Boolean).join(' · ') || 'Aguardando atualização';
   }
   canPause(status: string): boolean { return ['METADATA', 'QUEUED', 'DOWNLOADING', 'STALLED', 'CHECKING'].includes(status); }
   canPrioritize(status: string): boolean { return ['METADATA', 'QUEUED', 'DOWNLOADING', 'STALLED', 'PAUSED'].includes(status); }
   control(download: DownloadSummary, action: 'pause' | 'resume' | 'retry' | 'priority_up' | 'priority_down' | 'cancel'): void {
-    if (this.controllingId() === download.id) return;
+    if (this.pendingIds().has(download.id)) return;
     if (action === 'cancel' && !confirm(`Cancelar “${download.movieTitle}”? O arquivo já salvo será mantido.`)) return;
-    this.controllingId.set(download.id);
-    this.downloadsApi.control(download.id, action).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({ next: () => { this.controllingId.set(null); this.load(false); }, error: (error: unknown) => { this.controllingId.set(null); this.errorMessage.set(error instanceof HttpErrorResponse && error.error?.message ? error.error.message : 'Não foi possível concluir esta ação.'); } });
+    this.actionError.set('');
+    this.pendingIds.update(ids => new Set(ids).add(download.id));
+    this.downloadsApi.control(download.id, action).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: () => { this.finishAction(download.id); this.load(false); },
+      error: (error: unknown) => {
+        this.finishAction(download.id);
+        this.actionError.set(error instanceof HttpErrorResponse
+          ? error.error?.detail || error.error?.message || 'Não foi possível concluir esta ação.'
+          : 'Não foi possível concluir esta ação.');
+      }
+    });
+  }
+  private finishAction(id: string): void {
+    this.pendingIds.update(ids => { const next = new Set(ids); next.delete(id); return next; });
   }
   private subscribeToUpdates(): void {
     const source = new EventSource(apiUrl('/api/downloads/events'));

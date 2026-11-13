@@ -37,7 +37,13 @@ Para a forma recomendada de execução, instale:
 
 O aplicativo desktop também requer Node.js, Rust e as dependências do Tauri para o seu sistema. O VLC é necessário somente para abrir vídeos diretamente pela versão desktop.
 
-## Instalação rápida com Docker
+## Primeira execução pelo assistente
+
+No Windows, abra o Docker Desktop em modo Linux e execute `iniciar-qlcstream.bat`. O inicializador verifica requisitos e portas, preserva as configurações e abre o navegador quando a aplicação estiver pronta. Consulte o [guia de inicialização no Windows](docs/inicializacao-windows.md).
+
+Em qualquer sistema, a opção **Configurar** guia a configuração de TMDB, Prowlarr, qBittorrent e da pasta de mídia. A tela de configurações permite testar conexão e autenticação, além de verificar o acesso do backend à pasta de mídia. Confira o [guia do assistente](docs/assistente-primeira-configuracao.md) e a [precedência das configurações e proteção dos segredos](docs/configuracao-integracoes.md).
+
+## Instalação manual com Docker
 
 ### 1. Crie o arquivo de configuração
 
@@ -194,7 +200,7 @@ As variáveis de cache são opcionais e usam os valores mostrados quando omitida
 3. Confirme que Catálogo, Opções de download e Downloads aparecem como disponíveis.
 4. Escolha e salve a subpasta dos próximos downloads.
 
-O contador nessa tela confirma se os valores existem na configuração; para validar credenciais e conectividade, faça também uma consulta no catálogo, uma busca de opção e um download de teste autorizado.
+Use os testes da tela para verificar conectividade, autenticação e acesso à pasta. Para verificar o fluxo completo, faça também uma consulta no catálogo, uma busca de opção e um download de teste autorizado.
 
 ### Explorar filmes e séries
 
@@ -301,7 +307,7 @@ Parar sem apagar os dados:
 docker compose down
 ```
 
-Atualizar imagens e reconstruir o projeto:
+Atualizar imagens e reconstruir o projeto com as [versões fixadas no Compose](docs/versoes-integracoes.md):
 
 ```bash
 docker compose pull
@@ -353,4 +359,10 @@ Problemas comuns:
 └── .env.example      # modelo das variáveis de ambiente
 ```
 
-Consulte também [docs/architecture.md](docs/architecture.md) para conhecer a arquitetura e os módulos do backend.
+- [Arquitetura e módulos do backend](docs/architecture.md)
+- [Changelog](CHANGELOG.md)
+- [Recuperação de downloads](docs/downloads-confiabilidade.md)
+- [Diagnóstico de conexões](docs/diagnostico-integracoes.md)
+- [Diagnóstico de armazenamento](docs/diagnostico-armazenamento.md)
+- [Testes em CI](docs/ci.md)
+- [Roadmap](docs/roadmap.md)

@@ -7,11 +7,12 @@ import { Subject, catchError, debounceTime, distinctUntilChanged, forkJoin, map,
 import { CatalogApiService, CatalogMovie, CatalogPerson, CatalogSeries } from './core/catalog-api.service';
 import { isDesktopApp } from './core/api-url';
 import { SearchHistoryService } from './core/search-history.service';
+import { SetupBannerComponent } from './core/setup-banner.component';
 import { DownloadNotificationsService } from './core/download-notifications.service';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, RouterLinkActive, RouterOutlet],
+  imports: [RouterLink, RouterLinkActive, RouterOutlet, SetupBannerComponent],
   selector: 'app-root',
   styleUrl: './app.scss',
   templateUrl: './app.html',

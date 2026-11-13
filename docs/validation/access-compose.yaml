@@ -1,0 +1,28 @@
+# No application, database, torrent process, published port or personal mount.
+services:
+  prepare:
+    image: alpine:3.23@sha256:469c9ea410b9215eaee7976ba6c0639039b444be8e5d638f7abbada189971eb2
+    user: root
+    network_mode: none
+    command: [sh, /prepare-directories.sh]
+    volumes: [media:/media, secrets:/secrets, ../../backend/docker/prepare-directories.sh:/prepare-directories.sh:ro]
+  backend:
+    build: ../../backend
+    group_add: ["1000"]
+    network_mode: none
+    entrypoint: /bin/sh
+    volumes: [media:/data]
+  engine:
+    image: qbittorrentofficial/qbittorrent-nox:5.3.0-2@sha256:43b2d352cf76330a7ca34c7320b9b74227d6f31e662e0e123d0457206b09a7ea
+    network_mode: none
+    entrypoint: [/bin/sh, -c]
+    volumes: [media:/downloads]
+  inspect:
+    image: alpine:3.23@sha256:469c9ea410b9215eaee7976ba6c0639039b444be8e5d638f7abbada189971eb2
+    user: root
+    network_mode: none
+    entrypoint: /bin/sh
+    volumes: [media:/media, secrets:/secrets]
+volumes:
+  media:
+  secrets:

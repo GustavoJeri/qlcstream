@@ -1,3 +1,5 @@
+import { IntegrationAvailabilityService } from '../core/integration-availability.service';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -19,6 +21,7 @@ import { isDesktopApp } from '../core/api-url';
   imports: [RouterLink],
   styleUrl: './series-details.page.scss',
   template: `
+    @if (!availability.ready('prowlarr') || !availability.ready('qbittorrent')) { <p class="page" role="status">{{ availability.state() === 'loading' ? 'Conferindo as integrações…' : availability.state() === 'error' ? 'Não foi possível conferir busca e downloads.' : 'Busca, motor ou pasta dos downloads precisam de configuração. O catálogo continua disponível.' }} <a routerLink="/setup">Configurar recursos</a></p> }
     @if (details(); as data) {
       <section class="details-hero" aria-labelledby="series-title">
         @if (data.series.backdropPath) { <img [src]="backdropUrl(data.series.backdropPath)" [alt]="'Cena de ' + data.series.name" fetchpriority="high" decoding="async" /> }
@@ -48,12 +51,12 @@ import { isDesktopApp } from '../core/api-url';
             <div class="season-navigator"><div class="season-tabs" #seasonTabs (scroll)="syncSeasonSlider(seasonTabs)">@for (season of data.seasons; track season.tmdbId) { <button type="button" [class.active]="selectedSeason()?.seasonNumber === season.seasonNumber" (click)="selectSeason(data.series.tmdbId, season, $event)">T{{ season.seasonNumber }}</button> }</div>@if (data.seasons.length > 8) { <input class="season-slider" type="range" min="0" max="100" [value]="seasonSliderValue()" aria-label="Navegar pelas temporadas" (input)="moveSeasonSlider(seasonTabs, $event)" /> }</div>
             @if (selectedSeason(); as season) {
               <div class="season-copy"><strong>{{ season.name }}</strong><span>{{ season.episodeCount }} episódios</span></div>
-              <button class="btn btn-primary season-download" type="button" (click)="openReleases(data, season)"><i class="ph ph-download-simple"></i>Opções de download</button>
+              <button class="btn btn-primary season-download" type="button" [disabled]="!availability.ready('prowlarr')" (click)="openReleases(data, season)"><i class="ph ph-download-simple"></i>Opções de download</button>
             }
             @if (seasonDetails(); as current) {
               <div class="episode-list">@for (episode of current.episodes; track episode.tmdbId) {
                 <article>@if (episode.stillPath) { <img [src]="stillUrl(episode)" [alt]="episode.name" loading="lazy" decoding="async" /> } @else { <span><i class="ph ph-play-circle"></i></span> }
-                  <div><p>E{{ padded(episode.episodeNumber) }} · {{ year(episode.airDate) }}</p><h3>{{ episode.name }}</h3>@if (episode.overview) { <small>{{ episode.overview }}</small> }<button class="episode-download" type="button" (click)="openEpisodeReleases(data, selectedSeason()!, episode)"><i class="ph ph-download-simple"></i>Opções de download</button></div>
+                  <div><p>E{{ padded(episode.episodeNumber) }} · {{ year(episode.airDate) }}</p><h3>{{ episode.name }}</h3>@if (episode.overview) { <small>{{ episode.overview }}</small> }<button class="episode-download" type="button" [disabled]="!availability.ready('prowlarr')" (click)="openEpisodeReleases(data, selectedSeason()!, episode)"><i class="ph ph-download-simple"></i>Opções de download</button></div>
                 </article>
               }</div>
             }
@@ -69,7 +72,7 @@ import { isDesktopApp } from '../core/api-url';
             @if (releaseState() === 'loading') { <div class="release-state"><i class="ph ph-spinner-gap"></i>Procurando opções para download.</div> }
             @else if (releaseState() === 'error') { <div class="release-state error">Não foi possível encontrar opções agora. Tente novamente.</div> }
             @else if (!releases().length) { <div class="release-state">Nenhuma opção encontrada para {{ selectedEpisode() ? 'este episódio' : 'esta temporada' }}.</div> }
-            @else { <div class="release-list">@for (release of releases(); track releaseKey(release)) { <article><div><strong>{{ release.title }}</strong><p>{{ release.indexer || 'Fonte' }} · {{ release.seeders ?? 0 }} pessoas compartilhando · {{ size(release.size) }}</p></div><div class="release-actions"><button class="btn btn-primary" type="button" [disabled]="!acquisitionRef(release) || submittingRelease() === acquisitionRef(release)" (click)="enqueue(data, selectedSeason()!, selectedEpisode(), release)">@if (submittingRelease() === acquisitionRef(release)) { Preparando… } @else { Baixar }</button></div></article> }</div> }
+            @else { <div class="release-list">@for (release of releases(); track releaseKey(release)) { <article><div><strong>{{ release.title }}</strong><p>{{ release.indexer || 'Fonte' }} · {{ release.seeders ?? 0 }} pessoas compartilhando · {{ size(release.size) }}</p></div><div class="release-actions"><button class="btn btn-primary" type="button" [disabled]="!availability.ready('qbittorrent') || !acquisitionRef(release) || submittingRelease() === acquisitionRef(release)" (click)="enqueue(data, selectedSeason()!, selectedEpisode(), release)">@if (submittingRelease() === acquisitionRef(release)) { Preparando… } @else { Baixar }</button></div></article> }</div> }
           </section>
         </div>
       }
@@ -100,7 +103,10 @@ export class SeriesDetailsPage {
   readonly submittingRelease = signal<string | null>(null);
   readonly submissionMessage = signal<string | null>(null);
 
+  readonly availability = inject(IntegrationAvailabilityService);
+
   constructor() {
+    this.availability.refresh();
     this.route.paramMap.pipe(switchMap(params => this.api.seriesDetails(Number(params.get('tmdbId'))).pipe(catchError(() => of(null)))), takeUntilDestroyed(this.destroyRef)).subscribe(data => {
       this.details.set(data); this.libraryAction.set('idle'); this.closeReleases();
       if (data) this.searchHistory.rememberTitle({ mediaType: 'SERIES', tmdbId: data.series.tmdbId, title: data.series.name, subtitle: data.series.firstAirDate?.slice(0, 4) ?? 'Série', posterPath: data.series.posterPath });
@@ -115,7 +121,7 @@ export class SeriesDetailsPage {
   openReleases(data: SeriesDetails, season: SeriesSeason): void { this.selectedEpisode.set(null); this.openReleaseSearch(data, season, null); }
   openEpisodeReleases(data: SeriesDetails, season: SeriesSeason, episode: SeriesEpisode): void { this.selectedEpisode.set(episode); this.openReleaseSearch(data, season, episode); }
   closeReleases(): void { this.showReleases.set(false); this.releases.set([]); this.submittingRelease.set(null); this.selectedEpisode.set(null); }
-  enqueue(data: SeriesDetails, season: SeriesSeason, episode: SeriesEpisode | null, release: ReleaseOption): void { const acquisitionRef = this.acquisitionRef(release); if (!acquisitionRef) return; this.submittingRelease.set(acquisitionRef); this.submissionMessage.set(null); const title = release.title.toLowerCase(); const resolution = title.includes('2160p') ? 2160 : title.includes('1080p') ? 1080 : title.includes('720p') ? 720 : null; const source = title.includes('web-dl') ? 'WEB-DL' : title.includes('webrip') ? 'WEBRip' : title.includes('bluray') ? 'BluRay' : null; const dynamicRange = title.includes('hdr') ? 'HDR' : null; this.downloadsApi.enqueueSeries({ seriesTmdbId: data.series.tmdbId, seriesTitle: data.series.name, posterPath: data.series.posterPath, seasonNumber: season.seasonNumber, episodeNumber: episode?.episodeNumber ?? null, releaseTitle: release.title, acquisitionRef, indexerName: release.indexer, resolutionHeight: resolution, sourceType: source, dynamicRange }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({ next: () => { this.submissionMessage.set('Download adicionado. Acompanhe o andamento em Downloads.'); this.submittingRelease.set(null); }, error: () => { this.submissionMessage.set('Não foi possível iniciar este download. Tente outra opção.'); this.submittingRelease.set(null); } }); }
+  enqueue(data: SeriesDetails, season: SeriesSeason, episode: SeriesEpisode | null, release: ReleaseOption): void { const acquisitionRef = this.acquisitionRef(release); if (!acquisitionRef) return; this.submittingRelease.set(acquisitionRef); this.submissionMessage.set(null); const title = release.title.toLowerCase(); const resolution = title.includes('2160p') ? 2160 : title.includes('1080p') ? 1080 : title.includes('720p') ? 720 : null; const source = title.includes('web-dl') ? 'WEB-DL' : title.includes('webrip') ? 'WEBRip' : title.includes('bluray') ? 'BluRay' : null; const dynamicRange = title.includes('hdr') ? 'HDR' : null; this.downloadsApi.enqueueSeries({ seriesTmdbId: data.series.tmdbId, seriesTitle: data.series.name, posterPath: data.series.posterPath, seasonNumber: season.seasonNumber, episodeNumber: episode?.episodeNumber ?? null, releaseTitle: release.title, acquisitionRef, indexerName: release.indexer, resolutionHeight: resolution, sourceType: source, dynamicRange }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({ next: () => { this.submissionMessage.set('Download adicionado. Acompanhe o andamento em Downloads.'); this.submittingRelease.set(null); }, error: (error: unknown) => { this.submissionMessage.set(error instanceof HttpErrorResponse ? error.error?.detail || 'Não foi possível iniciar este download. Tente novamente.' : 'Não foi possível iniciar este download. Tente novamente.'); this.submittingRelease.set(null); } }); }
   releaseTargetLabel(): string { const season = this.selectedSeason(); const episode = this.selectedEpisode(); if (!season) return ''; return `${this.details()?.series.name ?? ''} · T${this.padded(season.seasonNumber)}${episode ? `E${this.padded(episode.episodeNumber)}` : ''}`; }
   private openReleaseSearch(data: SeriesDetails, season: SeriesSeason, episode: SeriesEpisode | null): void { this.showReleases.set(true); this.releases.set([]); this.releaseState.set('loading'); this.submissionMessage.set(null); const seasonCode = `S${season.seasonNumber.toString().padStart(2, '0')}`; const episodeCode = episode ? `E${episode.episodeNumber.toString().padStart(2, '0')}` : ''; this.releasesApi.searchSeries(`${data.series.name} ${seasonCode}${episodeCode}`).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({ next: values => { this.releases.set(values.slice(0, 8)); this.releaseState.set('ready'); }, error: () => this.releaseState.set('error') }); }
   selectSeason(seriesId: number, season: SeriesSeason, event?: Event): void { const target = event?.currentTarget; if (target instanceof HTMLElement) target.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); if (this.selectedSeason()?.seasonNumber === season.seasonNumber) return; this.selectedSeason.set(season); this.seasonDetails.set(null); this.seasonState.set('loading'); this.api.seasonDetails(seriesId, season.seasonNumber).pipe(catchError(() => of(null)), takeUntilDestroyed(this.destroyRef)).subscribe(value => { this.seasonDetails.set(value); this.seasonState.set('idle'); }); }

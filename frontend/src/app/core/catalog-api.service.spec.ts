@@ -29,14 +29,17 @@ describe('CatalogApiService', () => {
       posterPath: '/poster.jpg',
       backdropPath: '/backdrop.jpg',
       voteAverage: 8.1,
+      popularity: null,
     }];
 
-    service.trending().subscribe((result) => expect(result).toEqual(movies));
+    const page = { items: movies, page: 1, totalPages: 3, totalResults: 42, hasNext: true };
+    service.trending().subscribe((result) => expect(result).toEqual(page));
 
     const request = http.expectOne((candidate) => candidate.url === '/api/catalog/trending');
     expect(request.request.params.get('language')).toBe('pt-BR');
     expect(request.request.params.get('page')).toBe('1');
-    request.flush(movies);
+    expect(request.request.params.get('sort')).toBe('POPULARITY');
+    request.flush(page);
   });
 
   it('requests a curated discovery collection', () => {
@@ -45,7 +48,7 @@ describe('CatalogApiService', () => {
     const request = http.expectOne((candidate) => candidate.url === '/api/catalog/discover');
     expect(request.request.params.get('collection')).toBe('ESTABLISHED');
     expect(request.request.params.get('language')).toBe('pt-BR');
-    request.flush([]);
+    request.flush({ items: [], page: 1, totalPages: 1, totalResults: 0, hasNext: false });
   });
 
   it('sends the submitted title to catalog search', () => {
@@ -53,7 +56,7 @@ describe('CatalogApiService', () => {
 
     const request = http.expectOne((candidate) => candidate.url === '/api/catalog/search');
     expect(request.request.params.get('query')).toBe('Matrix');
-    request.flush([]);
+    request.flush({ items: [], page: 1, totalPages: 1, totalResults: 0, hasNext: false });
   });
 
   it('requests the details for a selected TMDB movie', () => {

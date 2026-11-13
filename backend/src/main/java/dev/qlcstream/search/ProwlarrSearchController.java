@@ -19,9 +19,14 @@ import dev.qlcstream.search.config.SearchProwlarrProperties;
 @RestController
 @RequestMapping("/api/search")
 public class ProwlarrSearchController {
+    private dev.qlcstream.system.IntegrationSettings settings;
     private final RestClient client;
     private final SearchProwlarrProperties properties;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    public ProwlarrSearchController(SearchProwlarrProperties properties, dev.qlcstream.system.IntegrationSettings settings) {
+        this(properties); this.settings = settings;
+    }
     public ProwlarrSearchController(SearchProwlarrProperties properties) {
         this.properties = properties;
         this.client = RestClient.builder().baseUrl(properties.baseUrl()).build();
@@ -29,6 +34,7 @@ public class ProwlarrSearchController {
 
     @GetMapping("/releases")
     List<ReleaseResponse> releases(@RequestParam @NotBlank String query, @RequestParam(required = false) Integer year) {
+        if (settings != null) { var c = settings.effective("prowlarr"); return new ProwlarrSearchController(new SearchProwlarrProperties(c.baseUrl(), c.secret())).releases(query, year); }
         if (!properties.configured()) throw new IllegalStateException("Prowlarr não está configurado.");
         var response = client.get().uri(uri -> uri.path("/api/v1/search").queryParam("query", query).build())
                 .header("X-Api-Key", properties.apiKey()).retrieve().body(ProwlarrRelease[].class);
@@ -41,6 +47,7 @@ public class ProwlarrSearchController {
 
     @GetMapping("/series-releases")
     List<ReleaseResponse> seriesReleases(@RequestParam @NotBlank String query) {
+        if (settings != null) { var c = settings.effective("prowlarr"); return new ProwlarrSearchController(new SearchProwlarrProperties(c.baseUrl(), c.secret())).seriesReleases(query); }
         if (!properties.configured()) throw new IllegalStateException("Prowlarr não está configurado.");
         var response = client.get().uri(uri -> uri.path("/api/v1/search").queryParam("query", query).build())
                 .header("X-Api-Key", properties.apiKey()).retrieve().body(ProwlarrRelease[].class);

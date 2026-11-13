@@ -24,3 +24,5 @@
 @media (max-width: 480px) { .empty-downloads, .downloads-state { align-items: flex-start; padding: 25px; } }
 
 .retry-action{color:var(--accent)!important}.retry-action i{margin-right:5px}
+.action-error { padding: 14px 18px; border: 1px solid var(--danger); border-radius: var(--radius-md); color: var(--danger); }
+.download-actions button:disabled { opacity: .5; cursor: wait; }

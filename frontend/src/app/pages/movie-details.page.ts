@@ -1,4 +1,5 @@
 import { Location } from '@angular/common';
+import { IntegrationAvailabilityService } from '../core/integration-availability.service';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
@@ -20,6 +21,7 @@ import { isDesktopApp } from '../core/api-url';
   imports: [RouterLink],
   styleUrl: './movie-details.page.scss',
   template: `
+    @if (!availability.ready('prowlarr') || !availability.ready('qbittorrent')) { <p class="page" role="status">{{ availability.state() === 'loading' ? 'Conferindo as integrações…' : availability.state() === 'error' ? 'Não foi possível conferir busca e downloads.' : 'Busca, motor ou pasta dos downloads precisam de configuração. O catálogo continua disponível.' }} <a routerLink="/setup">Configurar recursos</a></p> }
     @switch (state()) {
       @case ('loading') {
         <div class="page details-skeleton" aria-label="Carregando detalhes"><div class="skeleton-hero"></div><div class="skeleton-body"><span class="skeleton-poster"></span><div class="skeleton-copy"><i></i><b></b><em></em><em></em><div><small></small><small></small><small></small></div></div></div><div class="skeleton-lines"><i></i><i></i><i></i></div></div>
@@ -47,7 +49,7 @@ import { isDesktopApp } from '../core/api-url';
                 @if (details.originalTitle && details.originalTitle !== details.title) { <p class="original-title">{{ details.originalTitle }}</p> }
                 @if (details.tagline) { <p class="tagline">{{ details.tagline }}</p> }
                 @if (details.genres.length) { <ul class="genre-list" aria-label="Gêneros">@for (genre of details.genres; track genre) { <li>{{ genre }}</li> }</ul> }
-                <div class="detail-actions"><button class="btn btn-primary release-button" type="button" (click)="openReleases(details)"><i class="ph ph-download-simple"></i>Opções de download</button><button class="btn btn-quiet library-button" type="button" [disabled]="libraryAction() === 'adding' || libraryAction() === 'added'" (click)="addToLibrary(details)"><i class="ph" [class.ph-bookmark-simple]="libraryAction() !== 'added'" [class.ph-check]="libraryAction() === 'added'"></i>{{ libraryAction() === 'added' ? 'Na minha lista' : libraryAction() === 'adding' ? 'Adicionando' : 'Adicionar à biblioteca' }}</button><button class="btn btn-quiet library-button favorite-detail" type="button" (click)="toggleFavorite(details)"><i class="ph" [class.ph-heart-fill]="isFavorite()" [class.ph-heart]="!isFavorite()"></i>{{ isFavorite() ? 'Favorito' : 'Favoritar' }}</button></div>
+                <div class="detail-actions"><button class="btn btn-primary release-button" type="button" [disabled]="!availability.ready('prowlarr')" (click)="openReleases(details)"><i class="ph ph-download-simple"></i>Opções de download</button><button class="btn btn-quiet library-button" type="button" [disabled]="libraryAction() === 'adding' || libraryAction() === 'added'" (click)="addToLibrary(details)"><i class="ph" [class.ph-bookmark-simple]="libraryAction() !== 'added'" [class.ph-check]="libraryAction() === 'added'"></i>{{ libraryAction() === 'added' ? 'Na minha lista' : libraryAction() === 'adding' ? 'Adicionando' : 'Adicionar à biblioteca' }}</button><button class="btn btn-quiet library-button favorite-detail" type="button" (click)="toggleFavorite(details)"><i class="ph" [class.ph-heart-fill]="isFavorite()" [class.ph-heart]="!isFavorite()"></i>{{ isFavorite() ? 'Favorito' : 'Favoritar' }}</button></div>
                 <section class="overview" aria-labelledby="overview-title"><h2 id="overview-title">Sinopse</h2><p>{{ details.overview || 'Sinopse ainda não disponível.' }}</p></section>
               </article>
             </div>
@@ -58,7 +60,7 @@ import { isDesktopApp } from '../core/api-url';
               @if (details.recommendations.length) { <section class="recommendations-section" aria-labelledby="recommendations-title"><h2 id="recommendations-title">Você também pode gostar</h2><div class="recommendations-grid">@for (recommendation of details.recommendations; track recommendation.tmdbId) { <a [routerLink]="['/catalog', recommendation.tmdbId]">@if (recommendation.posterPath) { <img [src]="recommendationPosterUrl(recommendation)" [alt]="'Pôster de ' + recommendation.title" loading="lazy" decoding="async" /> } @else { <span><i class="ph ph-film-strip"></i></span> }<strong>{{ recommendation.title }}</strong><small>{{ year(recommendation) }}</small></a> }</div></section> }
             </div>
           </main>
-          @if (showReleases()) { <div class="release-overlay" role="presentation" (click)="closeReleases()"><section class="release-modal" role="dialog" aria-modal="true" aria-labelledby="release-title" (click)="$event.stopPropagation()"><header><div><p>OPÇÕES DISPONÍVEIS</p><h2 id="release-title">{{ details.title }}</h2></div><button class="icon-button" type="button" aria-label="Fechar" (click)="closeReleases()"><i class="ph ph-x"></i></button></header>@if (submissionMessage()) { <p class="submission-message">{{ submissionMessage() }}</p> } @if (releaseState() === 'loading') { <div class="release-state"><i class="ph ph-spinner-gap"></i>Procurando opções para download.</div> } @else if (releaseState() === 'error') { <div class="release-state error">Não foi possível encontrar opções agora. Tente novamente.</div> } @else if (!releases().length) { <div class="release-state">Nenhuma opção encontrada para este título.</div> } @else { <div class="release-list">@for (release of releases(); track releaseKey(release)) { <article><div><strong>{{ release.title }}</strong><p>{{ release.indexer || 'Fonte' }} · {{ release.seeders ?? 0 }} pessoas compartilhando · {{ size(release.size) }}</p></div><div class="release-actions"><button class="btn btn-primary" type="button" [disabled]="!acquisitionRef(release) || submittingRelease() === acquisitionRef(release)" (click)="enqueue(details, release)">@if (submittingRelease() === acquisitionRef(release)) { Preparando… } @else { Baixar }</button></div></article> }</div> }</section></div> }
+          @if (showReleases()) { <div class="release-overlay" role="presentation" (click)="closeReleases()"><section class="release-modal" role="dialog" aria-modal="true" aria-labelledby="release-title" (click)="$event.stopPropagation()"><header><div><p>OPÇÕES DISPONÍVEIS</p><h2 id="release-title">{{ details.title }}</h2></div><button class="icon-button" type="button" aria-label="Fechar" (click)="closeReleases()"><i class="ph ph-x"></i></button></header>@if (submissionMessage()) { <p class="submission-message">{{ submissionMessage() }}</p> } @if (releaseState() === 'loading') { <div class="release-state"><i class="ph ph-spinner-gap"></i>Procurando opções para download.</div> } @else if (releaseState() === 'error') { <div class="release-state error">Não foi possível encontrar opções agora. Tente novamente.</div> } @else if (!releases().length) { <div class="release-state">Nenhuma opção encontrada para este título.</div> } @else { <div class="release-list">@for (release of releases(); track releaseKey(release)) { <article><div><strong>{{ release.title }}</strong><p>{{ release.indexer || 'Fonte' }} · {{ release.seeders ?? 0 }} pessoas compartilhando · {{ size(release.size) }}</p></div><div class="release-actions"><button class="btn btn-primary" type="button" [disabled]="!availability.ready('qbittorrent') || !acquisitionRef(release) || submittingRelease() === acquisitionRef(release)" (click)="enqueue(details, release)">@if (submittingRelease() === acquisitionRef(release)) { Preparando… } @else { Baixar }</button></div></article> }</div> }</section></div> }
         }
       }
     }
@@ -87,7 +89,10 @@ export class MovieDetailsPage {
   readonly libraryAction = signal<'idle' | 'adding' | 'added'>('idle');
   readonly isFavorite = signal(false);
 
+  readonly availability = inject(IntegrationAvailabilityService);
+
   constructor() {
+    this.availability.refresh();
     this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
       const tmdbId = Number(params.get('tmdbId'));
       if (!Number.isSafeInteger(tmdbId) || tmdbId <= 0) {
@@ -149,7 +154,7 @@ export class MovieDetailsPage {
     const resolution = title.includes('2160p') ? 2160 : title.includes('1080p') ? 1080 : title.includes('720p') ? 720 : null;
     const source = title.includes('web-dl') ? 'WEB-DL' : title.includes('webrip') ? 'WEBRip' : title.includes('bluray') ? 'BluRay' : null;
     const dynamicRange = title.includes('hdr') ? 'HDR' : null;
-    this.downloadsApi.enqueue({ movieTmdbId: movie.tmdbId, releaseTitle: release.title, acquisitionRef, indexerName: release.indexer, resolutionHeight: resolution, sourceType: source, dynamicRange }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({ next: () => { this.submissionMessage.set('Download adicionado. Acompanhe o andamento em Downloads.'); this.submittingRelease.set(null); }, error: () => { this.submissionMessage.set('Não foi possível iniciar este download. Tente outra opção.'); this.submittingRelease.set(null); } });
+    this.downloadsApi.enqueue({ movieTmdbId: movie.tmdbId, releaseTitle: release.title, acquisitionRef, indexerName: release.indexer, resolutionHeight: resolution, sourceType: source, dynamicRange }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({ next: () => { this.submissionMessage.set('Download adicionado. Acompanhe o andamento em Downloads.'); this.submittingRelease.set(null); }, error: (error: unknown) => { this.submissionMessage.set(error instanceof HttpErrorResponse ? error.error?.detail || 'Não foi possível iniciar este download. Tente novamente.' : 'Não foi possível iniciar este download. Tente novamente.'); this.submittingRelease.set(null); } });
   }
   addToLibrary(movie: MovieDetails): void {
     this.libraryAction.set('adding');

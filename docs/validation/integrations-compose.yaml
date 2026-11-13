@@ -1,0 +1,47 @@
+name: qlcstream-integrations-test
+services:
+  database:
+    image: postgres:18.6-alpine@sha256:9ba53c7d41ea093baf5c1ba635ba5434c4f979880527d49bb7d9237d3193085b
+    environment:
+      POSTGRES_DB: integrations_test
+      POSTGRES_USER: integrations_test
+      POSTGRES_PASSWORD: fictional_database_password
+    volumes: [database:/var/lib/postgresql]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U integrations_test -d integrations_test]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  mock:
+    image: python:3.13-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e
+    command: [python, /fixture/mock-integrations.py]
+    volumes: [./mock-integrations.py:/fixture/mock-integrations.py:ro]
+  backend:
+    build: ../../backend
+    networks: [default, preview]
+    environment:
+      DB_URL: jdbc:postgresql://database:5432/integrations_test
+      DB_USER: integrations_test
+      DB_PASSWORD: fictional_database_password
+      INTEGRATION_SETTINGS_KEY_FILE: /run/secrets/integration_key
+      TMDB_API_TOKEN: fictional_environment_token
+      QLC_STREAM_TMDB_BASE_URL: http://mock:8000
+    secrets: [integration_key]
+    ports: [127.0.0.1:18087:8080]
+    depends_on:
+      database:
+        condition: service_healthy
+  frontend:
+    build: ../../frontend
+    networks: [default, preview]
+    ports: [127.0.0.1:14217:80]
+    depends_on: [backend]
+secrets:
+  integration_key:
+    file: ./fictional-integration-key.txt
+volumes:
+  database:
+networks:
+  preview: {}
+  default:
+    internal: true

@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 
 export const routes: Routes = [
+  { path: 'setup', loadComponent: () => import('./pages/setup.page').then((m) => m.SetupPage) },
   { path: 'catalog', loadComponent: () => import('./pages/catalog.page').then((m) => m.CatalogPage) },
   { path: 'catalog/:tmdbId', loadComponent: () => import('./pages/movie-details.page').then((m) => m.MovieDetailsPage) },
   { path: 'series', loadComponent: () => import('./pages/series.page').then((m) => m.SeriesPage) },

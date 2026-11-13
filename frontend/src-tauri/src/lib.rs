@@ -1,4 +1,7 @@
-use std::{env, path::{Path, PathBuf}, process::Command};
+use std::{path::{Component, Path, PathBuf}, process::Command};
+
+#[cfg(target_os = "macos")]
+use tauri::Manager;
 
 fn docker_output(arguments: &[&str]) -> Result<String, String> {
   let output = Command::new("docker")

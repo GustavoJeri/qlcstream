@@ -1,8 +1,17 @@
 name: qlc-stream
 
 services:
+  setup-directories:
+    image: alpine:3.23@sha256:469c9ea410b9215eaee7976ba6c0639039b444be8e5d638f7abbada189971eb2
+    user: root
+    command: [sh, /prepare-directories.sh]
+    volumes:
+      - ./data/integration-secrets:/secrets
+      - ${MEDIA_HOST_PATH:-./data/media}:/media
+      - ./backend/docker/prepare-directories.sh:/prepare-directories.sh:ro
+
   database:
-    image: postgres:18.6-alpine
+    image: postgres:18.6-alpine@sha256:9ba53c7d41ea093baf5c1ba635ba5434c4f979880527d49bb7d9237d3193085b
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-qlc_stream}
       POSTGRES_USER: ${POSTGRES_USER:-qlc_stream}
@@ -17,6 +26,7 @@ services:
     restart: unless-stopped
 
   backend:
+    group_add: ["1000"]
     build:
       context: ./backend
     environment:
@@ -33,11 +43,15 @@ services:
       QBITTORRENT_USERNAME: ${QBITTORRENT_USERNAME:-}
       QBITTORRENT_PASSWORD: ${QBITTORRENT_PASSWORD:-}
       MEDIA_ROOT: /data
+      INTEGRATION_SETTINGS_KEY_FILE: /run/qlcstream-secrets/integration-settings.key
     volumes:
       - ${MEDIA_HOST_PATH:-./data/media}:/data
+      - ./data/integration-secrets:/run/qlcstream-secrets
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
+      setup-directories:
+        condition: service_completed_successfully
       database:
         condition: service_healthy
     restart: unless-stopped
@@ -52,7 +66,7 @@ services:
     restart: unless-stopped
 
   prowlarr:
-    image: lscr.io/linuxserver/prowlarr:latest
+    image: lscr.io/linuxserver/prowlarr:2.7.0.5723-ls168@sha256:6660787a99b2e58203539583663c973b48979fc00ff2cb78dc0ea17429e1f6ef
     environment:
       PUID: 1000
       PGID: 1000
@@ -64,12 +78,12 @@ services:
     restart: unless-stopped
 
   qbittorrent:
-    image: qbittorrentofficial/qbittorrent-nox:latest
+    image: qbittorrentofficial/qbittorrent-nox:5.3.0-2@sha256:43b2d352cf76330a7ca34c7320b9b74227d6f31e662e0e123d0457206b09a7ea
     environment:
       QBT_LEGAL_NOTICE: confirm
-      QBT_VERSION: 5.1.4
       QBT_WEBUI_PORT: 8080
       QBT_TORRENTING_PORT: 6881
+    stop_grace_period: 30m
     volumes:
       - ./data/qbittorrent-official:/config
       - ${MEDIA_HOST_PATH:-./data/media}:/downloads

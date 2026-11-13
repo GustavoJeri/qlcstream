@@ -23,6 +23,8 @@ management:
         enabled: true
 
 qlc-stream:
+  integrations:
+    key-file: ${INTEGRATION_SETTINGS_KEY_FILE:}
   tmdb:
     base-url: https://api.themoviedb.org/3
     api-token: ${TMDB_API_TOKEN:}
@@ -38,4 +40,4 @@ qlc-stream:
     username: ${QBITTORRENT_USERNAME:}
     password: ${QBITTORRENT_PASSWORD:}
   storage:
-    media-root: ${MEDIA_ROOT:./data/media}
+    media-root: ${MEDIA_ROOT:/data}
