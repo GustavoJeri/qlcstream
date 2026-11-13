@@ -15,7 +15,7 @@ Este fork de [diegodinizm1/qlcstream](https://github.com/diegodinizm1/qlcstream)
 - [Plano de evolução: diagnóstico e configuração guiada](docs/roadmap.md)
 - [Diagnóstico das conexões: estados, limites e validação isolada](docs/diagnostico-integracoes.md)
 
-A tela de configurações testa as conexões autenticadas com TMDB, Prowlarr e qBittorrent e diagnostica leitura e escrita na pasta salva. Orienta a recuperação de falhas e mantém o compartilhamento físico dos volumes inconclusivo quando não há prova. A configuração guiada ainda não foi implementada.
+A tela de configurações testa as conexões autenticadas com TMDB, Prowlarr e qBittorrent e diagnostica leitura e escrita na pasta salva. Orienta a recuperação de falhas e mantém o compartilhamento físico dos volumes inconclusivo quando não há prova. O [assistente em Configurar](docs/assistente-primeira-configuracao.md) orienta as integrações por etapas e preserva configurações existentes.
 
 ## Estrutura
 
@@ -55,4 +55,4 @@ cd frontend && npm install && npm start
 
 Para executar o backend fora do Docker, defina as variáveis de conexão descritas em `.env.example` e mantenha o PostgreSQL acessível.
 
-As integrações também podem ser configuradas pela API sem recriar o backend. Consulte [precedência, proteção dos segredos e recuperação](docs/configuracao-integracoes.md). O assistente visual continua previsto para a Issue #18.
+As integrações também podem ser configuradas pela API sem recriar o backend. Consulte [precedência, proteção dos segredos e recuperação](docs/configuracao-integracoes.md). O assistente visual está descrito no [guia de configuração](docs/assistente-primeira-configuracao.md).

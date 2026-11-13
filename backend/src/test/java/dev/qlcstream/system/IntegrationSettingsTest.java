@@ -130,6 +130,33 @@ class IntegrationSettingsTest {
         assertKeyChangeRejected(service());
     }
 
+    @Test void explicitProvisionCreatesACompleteKeyOnceAndNeverReplacesExistingFiles() throws Exception {
+        Files.delete(temporary.resolve("key"));
+        var settings = service();
+        assertFalse(settings.keyReady());
+        settings.provisionKey();
+        var key = Files.readAllBytes(temporary.resolve("key"));
+        assertEquals(32, Base64.getDecoder().decode(key).length);
+        assertTrue(settings.keyReady());
+        settings.provisionKey();
+        assertArrayEquals(key, Files.readAllBytes(temporary.resolve("key")));
+        settings.update("tmdb", change(null, null));
+        assertEquals(settings.effective("tmdb"), service().effective("tmdb"));
+        Files.delete(temporary.resolve("key"));
+        assertThrows(IllegalStateException.class, settings::provisionKey);
+        assertFalse(Files.exists(temporary.resolve("key")));
+        Files.writeString(temporary.resolve("key"), "invalid-existing-key");
+        var empty = new HashMap<>(rows);
+        rows.clear();
+        try {
+            assertThrows(IllegalStateException.class, service()::provisionKey);
+            assertEquals("invalid-existing-key", Files.readString(temporary.resolve("key")));
+        } finally { rows.putAll(empty); }
+        try (var files = Files.list(temporary)) {
+            assertFalse(files.anyMatch(path -> path.getFileName().toString().startsWith(".integration-key-")));
+        }
+    }
+
     private void assertKeyChangeRejected(IntegrationSettings settings) throws Exception {
         var previous = settings.effective("tmdb");
         var previousRows = Map.copyOf(rows);

@@ -20,6 +20,15 @@ class IntegrationSettingsController {
     @GetMapping
     ResponseEntity<List<IntegrationSettings.State>> states() { return response(settings.states()); }
 
+    @GetMapping("/key")
+    ResponseEntity<Map<String, Boolean>> key() { return response(Map.of("ready", settings.keyReady())); }
+
+    @PostMapping("/key")
+    ResponseEntity<Map<String, Boolean>> provisionKey() {
+        settings.provisionKey();
+        return response(Map.of("ready", true));
+    }
+
     @PutMapping("/{id}")
     ResponseEntity<IntegrationSettings.State> update(@PathVariable String id, @RequestBody IntegrationSettings.Change change) {
         return response(settings.update(id, change));

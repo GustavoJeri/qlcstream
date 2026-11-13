@@ -1,6 +1,15 @@
 name: qlc-stream
 
 services:
+  setup-directories:
+    image: alpine:3.23
+    user: root
+    command: [sh, /prepare-directories.sh]
+    volumes:
+      - ./data/integration-secrets:/secrets
+      - ${MEDIA_HOST_PATH:-./data/media}:/media
+      - ./backend/docker/prepare-directories.sh:/prepare-directories.sh:ro
+
   database:
     image: postgres:18.6-alpine
     environment:
@@ -17,6 +26,7 @@ services:
     restart: unless-stopped
 
   backend:
+    group_add: ["1000"]
     build:
       context: ./backend
     environment:
@@ -33,10 +43,12 @@ services:
       INTEGRATION_SETTINGS_KEY_FILE: /run/qlcstream-secrets/integration-settings.key
     volumes:
       - ${MEDIA_HOST_PATH:-./data/media}:/data
-      - ./data/integration-secrets:/run/qlcstream-secrets:ro
+      - ./data/integration-secrets:/run/qlcstream-secrets
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
+      setup-directories:
+        condition: service_completed_successfully
       database:
         condition: service_healthy
     restart: unless-stopped

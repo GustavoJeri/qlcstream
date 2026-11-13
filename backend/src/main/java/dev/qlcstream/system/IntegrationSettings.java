@@ -54,6 +54,46 @@ public class IntegrationSettings {
 
     synchronized List<State> states() { return IDS.stream().map(this::state).toList(); }
 
+    synchronized boolean keyReady() {
+        try { cipher(); return true; }
+        catch (IllegalStateException unavailable) { return false; }
+    }
+
+    synchronized void provisionKey() {
+        if (keyReady()) return;
+        // A missing/replaced key must never be regenerated for an existing installation.
+        if (activeCipher != null || !managed.isEmpty() || keyFile.isBlank()) throw new IllegalStateException();
+        var destination = Path.of(keyFile).toAbsolutePath();
+        Path temporary = null;
+        try {
+            if (Files.exists(destination, java.nio.file.LinkOption.NOFOLLOW_LINKS)) throw new IllegalStateException();
+            var directory = destination.getParent();
+            Files.createDirectories(directory);
+            var attributes = Files.getFileStore(directory).supportsFileAttributeView("posix")
+                    ? new java.nio.file.attribute.FileAttribute<?>[]{java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
+                            java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"))}
+                    : new java.nio.file.attribute.FileAttribute<?>[0];
+            temporary = Files.createTempFile(directory, ".integration-key-", ".tmp", attributes);
+            byte[] bytes = new byte[32];
+            new java.security.SecureRandom().nextBytes(bytes);
+            try (var channel = java.nio.channels.FileChannel.open(temporary, java.nio.file.StandardOpenOption.WRITE)) {
+                var content = java.nio.ByteBuffer.wrap(java.util.Base64.getEncoder().encode(bytes));
+                while (content.hasRemaining()) channel.write(content);
+                channel.force(true);
+            }
+            // Publish a complete file atomically, failing if another process created the destination.
+            Files.createLink(destination, temporary);
+            cipher();
+        } catch (Exception failure) {
+            throw new IllegalStateException("Unable to provision integration settings key; check the protected directory.");
+        } finally {
+            if (temporary != null) {
+                try { Files.deleteIfExists(temporary); }
+                catch (java.io.IOException failure) { /* The exclusive temporary file contains no application data. */ }
+            }
+        }
+    }
+
     private State state(String id) {
         var config = effective(id);
         return new State(id, managed.containsKey(id) ? "application" : "environment", safeAddress(config.baseUrl()),
