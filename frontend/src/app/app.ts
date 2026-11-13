@@ -1,11 +1,12 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Subject, catchError, debounceTime, distinctUntilChanged, forkJoin, of, switchMap } from 'rxjs';
+import { Subject, catchError, debounceTime, distinctUntilChanged, forkJoin, map, of, switchMap } from 'rxjs';
 
 import { CatalogApiService, CatalogMovie, CatalogPerson, CatalogSeries } from './core/catalog-api.service';
 import { isDesktopApp } from './core/api-url';
+import { SearchHistoryService } from './core/search-history.service';
 import { DownloadNotificationsService } from './core/download-notifications.service';
 
 @Component({
@@ -21,10 +22,15 @@ export class App {
   private readonly destroyRef = inject(DestroyRef);
   private readonly catalogApi = inject(CatalogApiService);
   private readonly downloadNotifications = inject(DownloadNotificationsService);
+  private readonly searchHistory = inject(SearchHistoryService);
   private readonly queryChanges = new Subject<string>();
 
   readonly globalQuery = signal('');
+  readonly recentSearches = this.searchHistory.searches;
+  readonly recentTitles = this.searchHistory.recentTitles;
   readonly desktop = signal(isDesktopApp());
+  readonly macDesktop = computed(() => this.desktop() && /Macintosh|Mac OS X/.test(navigator.userAgent));
+  readonly windowsDesktop = computed(() => this.desktop() && !this.macDesktop());
   readonly maximized = signal(false);
   readonly suggestions = signal<CatalogMovie[]>([]);
   readonly peopleSuggestions = signal<CatalogPerson[]>([]);
@@ -49,15 +55,16 @@ export class App {
       debounceTime(220),
       distinctUntilChanged(),
       switchMap((query) => {
+        query = query.replace(/\s+/g, ' ').trim();
         if (query.length < 2) {
           this.autocompleteState.set('idle');
           return of({ movies: [], people: [], series: [] });
         }
         this.autocompleteState.set('loading');
         return forkJoin({
-          movies: this.catalogApi.search(query).pipe(catchError(() => of([]))),
+          movies: this.catalogApi.search(query).pipe(map((page) => page.items), catchError(() => of([]))),
           people: this.catalogApi.searchPeople(query).pipe(catchError(() => of([]))),
-          series: this.catalogApi.searchSeries(query).pipe(catchError(() => of([]))),
+          series: this.catalogApi.searchSeries(query).pipe(map((page) => page.items), catchError(() => of([]))),
         });
       }),
       takeUntilDestroyed(this.destroyRef),
@@ -102,6 +109,7 @@ export class App {
   }
 
   selectSuggestion(movie: CatalogMovie): void {
+    this.searchHistory.rememberTitle({ mediaType: 'MOVIE', tmdbId: movie.tmdbId, title: movie.title, subtitle: movie.releaseDate?.slice(0, 4) ?? 'Filme', posterPath: movie.posterPath });
     this.globalQuery.set(movie.title);
     this.suggestions.set([]);
     this.peopleSuggestions.set([]);
@@ -122,6 +130,7 @@ export class App {
   }
 
   selectSeries(series: CatalogSeries): void {
+    this.searchHistory.rememberTitle({ mediaType: 'SERIES', tmdbId: series.tmdbId, title: series.name, subtitle: series.firstAirDate?.slice(0, 4) ?? 'Série', posterPath: series.posterPath });
     this.globalQuery.set(series.name);
     this.suggestions.set([]);
     this.peopleSuggestions.set([]);
@@ -135,8 +144,15 @@ export class App {
     event.preventDefault();
     const query = this.globalQuery().trim();
     this.autocompleteOpen.set(false);
+    this.searchHistory.rememberSearch(query);
     void this.router.navigate(['/catalog'], { queryParams: { q: query || null } });
   }
+
+
+  selectRecentSearch(query: string): void { this.globalQuery.set(query); this.searchHistory.rememberSearch(query); void this.router.navigate(['/catalog'], { queryParams: { q: query } }); this.autocompleteOpen.set(false); }
+  selectRecentTitle(item: import('./core/search-history.service').RecentTitle): void { this.searchHistory.rememberTitle(item); this.globalQuery.set(item.title); void this.router.navigate([item.mediaType === 'SERIES' ? '/series' : '/catalog', item.tmdbId]); this.autocompleteOpen.set(false); }
+  clearSearchHistory(): void { this.searchHistory.clearSearches(); }
+  clearRecentTitles(): void { this.searchHistory.clearRecentTitles(); }
 
   async minimizeWindow(): Promise<void> {
     if (this.desktop()) await getCurrentWindow().minimize();

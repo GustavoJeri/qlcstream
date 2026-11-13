@@ -1,4 +1,4 @@
-use std::{path::{Component, Path, PathBuf}, process::Command};
+use std::{env, path::{Path, PathBuf}, process::Command};
 
 fn docker_output(arguments: &[&str]) -> Result<String, String> {
   let output = Command::new("docker")
@@ -133,6 +133,14 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![open_library_file, reveal_library_file, relative_library_directory, open_external_url])
     .plugin(tauri_plugin_dialog::init())
     .setup(|app| {
+      #[cfg(target_os = "macos")]
+      {
+        let window = app.get_webview_window("main")
+          .ok_or("A janela principal não está disponível.")?;
+        window.set_title_bar_style(tauri::TitleBarStyle::Overlay)?;
+        window.set_decorations(true)?;
+        window.set_title("")?;
+      }
       if cfg!(debug_assertions) {
         app.handle().plugin(
           tauri_plugin_log::Builder::default()

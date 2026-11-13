@@ -34,6 +34,7 @@ public class ProwlarrSearchController {
                 .header("X-Api-Key", properties.apiKey()).retrieve().body(ProwlarrRelease[].class);
         if (response == null) return List.of();
         return java.util.Arrays.stream(response).filter(release -> isMovieRelease(release, year))
+                .filter(release -> !isAdultRelease(release.title()))
                 .sorted(Comparator.comparingInt((ProwlarrRelease release) -> score(release, year)).reversed())
                 .map(ReleaseResponse::from).toList();
     }
@@ -45,10 +46,16 @@ public class ProwlarrSearchController {
                 .header("X-Api-Key", properties.apiKey()).retrieve().body(ProwlarrRelease[].class);
         if (response == null) return List.of();
         return java.util.Arrays.stream(response).filter(release -> EPISODE.matcher(release.title() == null ? "" : release.title()).find())
+                .filter(release -> !isAdultRelease(release.title()))
                 .sorted(Comparator.comparingInt((ProwlarrRelease release) -> score(release, null)).reversed()).map(ReleaseResponse::from).toList();
     }
 
     private static final Pattern EPISODE = Pattern.compile("(?i)\\b(s\\d{1,2}(e\\d{1,2})?|season\\s*\\d+)\\b");
+    private static final Pattern ADULT_TITLE = Pattern.compile("(?i)\\bxxx\\b");
+    private static boolean isAdultRelease(String title) {
+        return title != null && ADULT_TITLE.matcher(title).find();
+    }
+
     private static boolean isMovieRelease(ProwlarrRelease release, Integer year) {
         var title = release.title() == null ? "" : release.title();
         return !EPISODE.matcher(title).find() && (year == null || title.contains(String.valueOf(year)));

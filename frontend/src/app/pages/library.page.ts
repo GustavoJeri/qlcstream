@@ -1,4 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
+import { tmdbImage } from '../core/tmdb-image';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -9,7 +10,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { forkJoin, map } from 'rxjs';
 
 import { CatalogApiService, CatalogMovie, CatalogSeries } from '../core/catalog-api.service';
 
@@ -160,7 +161,7 @@ interface CollectionSearchResult {
                           ]"
                         >
                           @if (item.posterPath) {
-                            <img [src]="posterUrl(item)" [alt]="item.title" />
+                            <img [src]="posterUrl(item)" [alt]="item.title" loading="lazy" decoding="async" />
                           } @else {
                             <i class="ph ph-film-strip"></i>
                           }</a
@@ -248,7 +249,7 @@ interface CollectionSearchResult {
                 @for (result of collectionResults(); track result.mediaType + result.tmdbId) {
                   <button type="button" (click)="addSearchResultToCollection(result)">
                     @if (result.posterPath) {
-                      <img [src]="posterUrl(result)" [alt]="" />
+                      <img [src]="posterUrl(result)" [alt]="" loading="lazy" decoding="async" />
                     } @else {
                       <span
                         ><i
@@ -295,7 +296,7 @@ interface CollectionSearchResult {
                   ]"
                 >
                   @if (favorite.posterPath) {
-                    <img [src]="posterUrl(favorite)" [alt]="'Pôster de ' + favorite.title" />
+                    <img [src]="posterUrl(favorite)" loading="lazy" decoding="async" [alt]="'Pôster de ' + favorite.title" />
                   } @else {
                     <span
                       ><i
@@ -338,7 +339,7 @@ interface CollectionSearchResult {
               <article class="planned-film">
                 <a [routerLink]="['/catalog', movie.tmdbId]" class="planned-poster">
                   @if (movie.posterPath) {
-                    <img [src]="posterUrl(movie)" [alt]="'Pôster de ' + movie.title" />
+                    <img [src]="posterUrl(movie)" loading="lazy" decoding="async" [alt]="'Pôster de ' + movie.title" />
                   } @else {
                     <i class="ph ph-film-strip"></i>
                   }
@@ -379,7 +380,7 @@ interface CollectionSearchResult {
               <article class="planned-film">
                 <a [routerLink]="['/series', series.tmdbId]" class="planned-poster">
                   @if (series.posterPath) {
-                    <img [src]="posterUrl(series)" [alt]="'Pôster de ' + series.name" />
+                    <img [src]="posterUrl(series)" loading="lazy" decoding="async" [alt]="'Pôster de ' + series.name" />
                   } @else {
                     <i class="ph ph-television"></i>
                   }
@@ -421,7 +422,7 @@ interface CollectionSearchResult {
             @for (series of filteredAvailableSeries(); track series.tmdbId) {
               <a class="series-library-card" [routerLink]="['/series', series.tmdbId]">
                 @if (series.posterPath) {
-                  <img [src]="posterUrl(series)" [alt]="'Pôster de ' + series.title" />
+                  <img [src]="posterUrl(series)" loading="lazy" decoding="async" [alt]="'Pôster de ' + series.title" />
                 } @else {
                   <span><i class="ph ph-television"></i></span>
                 }
@@ -648,8 +649,8 @@ export class LibraryPage {
     }
     this.searchingCollection.set(true);
     forkJoin({
-      movies: this.catalogApi.search(search),
-      series: this.catalogApi.searchSeries(search),
+      movies: this.catalogApi.search(search).pipe(map((page) => page.items)),
+      series: this.catalogApi.searchSeries(search).pipe(map((page) => page.items)),
     })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
@@ -834,7 +835,7 @@ export class LibraryPage {
   posterUrl(
     item: LibraryItem | PlannedMovie | PlannedSeries | FavoriteItem | { posterPath: string | null },
   ): string {
-    return `https://image.tmdb.org/t/p/w342${item.posterPath}`;
+    return tmdbImage(item.posterPath, 'poster-card');
   }
   year(movie: PlannedMovie): string {
     return movie.releaseDate ? movie.releaseDate.slice(0, 4) : 'Sem data';

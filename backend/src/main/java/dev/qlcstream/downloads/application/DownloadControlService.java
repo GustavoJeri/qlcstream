@@ -22,13 +22,17 @@ public class DownloadControlService {
     public void control(UUID id, Action action) {
         var download = downloads.findById(id).orElseThrow(() -> new IllegalArgumentException("Download não encontrado."));
         var hash = download.infoHash();
-        if (hash == null || hash.isBlank()) throw new IllegalStateException("O torrent ainda não possui metadados.");
+        if (hash == null || hash.isBlank()) hash = qbittorrent.hashForSavePath("/downloads/" + download.relativeDirectory());
+        if (hash == null || hash.isBlank()) throw new IllegalStateException("O torrent ainda está sendo preparado pelo qBittorrent.");
         switch (action) {
             case PAUSE -> { qbittorrent.pause(hash); download.markStatus("PAUSED"); }
             case RESUME -> { qbittorrent.resume(hash); download.markStatus("QUEUED"); }
+            case RETRY -> { qbittorrent.retry(hash); download.markStatus("CHECKING"); }
+            case PRIORITY_UP -> qbittorrent.increasePriority(hash);
+            case PRIORITY_DOWN -> qbittorrent.decreasePriority(hash);
             case CANCEL -> { qbittorrent.remove(hash); download.markRemoved(); }
         }
     }
 
-    public enum Action { PAUSE, RESUME, CANCEL }
+    public enum Action { PAUSE, RESUME, RETRY, PRIORITY_UP, PRIORITY_DOWN, CANCEL }
 }

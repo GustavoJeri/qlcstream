@@ -74,14 +74,32 @@ public class QbittorrentClient {
         }
     }
 
-    public void pause(String hash) { command("/api/v2/torrents/pause", hash); }
-    public void resume(String hash) { command("/api/v2/torrents/resume", hash); }
+    public void pause(String hash) { command(hash, "/api/v2/torrents/stop", "/api/v2/torrents/pause"); }
+    public void resume(String hash) { command(hash, "/api/v2/torrents/start", "/api/v2/torrents/resume"); }
+    public void retry(String hash) {
+        command(hash, "/api/v2/torrents/recheck");
+        resume(hash);
+    }
+    public void increasePriority(String hash) { command(hash, "/api/v2/torrents/increasePrio"); }
+    public void decreasePriority(String hash) { command(hash, "/api/v2/torrents/decreasePrio"); }
 
-    private void command(String path, String hash) {
-        if (hash == null || hash.isBlank()) throw new QbittorrentUnavailableException("O torrent não possui identificador.");
+    public String hashForSavePath(String savePath) {
+        return torrents().stream().filter(torrent -> savePath.equals(torrent.savePath())).map(TorrentSnapshot::hash).findFirst().orElse(null);
+    }
+
+    private void command(String hash, String... paths) {
+        if (hash == null || hash.isBlank()) throw new QbittorrentUnavailableException("O torrent ainda não está disponível no qBittorrent.");
         try {
-            var response = post(authenticatedClient(), path, Map.of("hashes", hash));
-            if (response.statusCode() < 200 || response.statusCode() >= 300) throw new QbittorrentUnavailableException("O qBittorrent recusou a ação.");
+            var client = authenticatedClient();
+            for (var path : paths) {
+                var response = post(client, path, Map.of("hashes", hash));
+                if (response.statusCode() >= 200 && response.statusCode() < 300) return;
+                if (response.statusCode() != 404) {
+                    if (response.statusCode() == 409) throw new QbittorrentUnavailableException("Ative a fila de torrents no qBittorrent para alterar a prioridade.");
+                    throw new QbittorrentUnavailableException("O qBittorrent recusou a ação.");
+                }
+            }
+            throw new QbittorrentUnavailableException("A versão atual do qBittorrent não reconhece esta ação.");
         } catch (IOException exception) {
             throw new QbittorrentUnavailableException("Não foi possível alcançar o qBittorrent.", exception);
         } catch (InterruptedException exception) {

@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Test;
 import dev.qlcstream.catalog.application.port.out.MovieCatalogRepository;
 import dev.qlcstream.catalog.application.port.out.MovieMetadataProvider;
 import dev.qlcstream.catalog.domain.CatalogCollection;
+import dev.qlcstream.catalog.domain.CatalogPage;
+import dev.qlcstream.catalog.domain.CatalogSort;
 import dev.qlcstream.catalog.domain.Movie;
 import dev.qlcstream.catalog.domain.MovieDetails;
 
@@ -29,9 +31,10 @@ class CatalogServiceTest {
         MovieCatalogRepository repository = movies -> List.of(savedMovie);
         var service = new CatalogService(provider, repository);
 
-        var result = service.trending("pt-BR", 1);
+        var result = service.trending("pt-BR", 1, CatalogSort.POPULARITY);
 
-        assertThat(result).containsExactly(savedMovie);
+        assertThat(result.items()).containsExactly(savedMovie);
+        assertThat(result.hasNext()).isTrue();
     }
 
     @Test
@@ -56,18 +59,18 @@ class CatalogServiceTest {
     private record StubMetadataProvider(List<Movie> movies) implements MovieMetadataProvider {
 
         @Override
-        public List<Movie> trending(String language, int page) {
-            return movies;
+        public CatalogPage<Movie> trending(String language, int page, CatalogSort sort) {
+            return new CatalogPage<>(movies, page, 2, 40);
         }
 
         @Override
-        public List<Movie> discover(CatalogCollection collection, String language, int page) {
-            return movies;
+        public CatalogPage<Movie> discover(CatalogCollection collection, String language, int page, CatalogSort sort) {
+            return new CatalogPage<>(movies, page, 2, 40);
         }
 
         @Override
-        public List<Movie> search(String query, String language, int page) {
-            return movies;
+        public CatalogPage<Movie> search(String query, String language, int page, CatalogSort sort) {
+            return new CatalogPage<>(movies, page, 2, 40);
         }
 
         @Override

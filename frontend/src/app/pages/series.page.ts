@@ -10,11 +10,12 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { Observable, Subject, Subscription, debounceTime, distinctUntilChanged } from 'rxjs';
 
-import { CatalogApiService, CatalogSeries } from '../core/catalog-api.service';
+import { CatalogApiService, CatalogPageResponse, CatalogSeries, CatalogSort } from '../core/catalog-api.service';
+import { tmdbImage } from '../core/tmdb-image';
 import { LibraryApiService } from '../core/library-api.service';
 
 type SeriesFilter = 'POPULAR' | 'TOP_RATED' | 'RECENT' | 'ESTABLISHED';
-type Sort = 'POPULARITY' | 'RATING' | 'NEWEST' | 'OLDEST' | 'TITLE';
+type Sort = CatalogSort;
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -289,25 +290,7 @@ export class SeriesPage {
   readonly spotlightSeries = computed(
     () => this.spotlightItems()[this.activeSpotlightIndex()] ?? this.series()[0],
   );
-  readonly displayedSeries = computed(() => {
-    const values = [...this.series()];
-    if (!this.sortTouched()) return values;
-    const sort = this.sortBy();
-    switch (sort) {
-      case 'RATING':
-        return values.sort((a, b) => (b.voteAverage ?? -1) - (a.voteAverage ?? -1));
-      case 'NEWEST':
-        return values.sort((a, b) => (b.firstAirDate ?? '').localeCompare(a.firstAirDate ?? ''));
-      case 'OLDEST':
-        return values.sort((a, b) =>
-          (a.firstAirDate ?? '9999').localeCompare(b.firstAirDate ?? ''),
-        );
-      case 'TITLE':
-        return values.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-      default:
-        return values.sort((a, b) => (b.popularity ?? -1) - (a.popularity ?? -1));
-    }
-  });
+  readonly displayedSeries = computed(() => this.series());
   constructor() {
     if (
       typeof window !== 'undefined' &&
@@ -320,14 +303,14 @@ export class SeriesPage {
       .pipe(debounceTime(260), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
       .subscribe((query) => {
         this.lastSubmittedQuery.set(query);
-        this.load(query ? this.api.searchSeries(query) : this.api.trendingSeries());
+        this.load(query ? this.api.searchSeries(query, 'pt-BR', 1, this.sortTouched() ? this.sortBy() : undefined) : this.api.trendingSeries('pt-BR', 1, this.sortBy()));
       });
     this.loadTrending();
   }
   onQuery(event: Event): void {
     const query = (event.target as HTMLInputElement).value;
     this.query.set(query);
-    this.queryChanges.next(query.trim());
+    this.queryChanges.next(query.replace(/\s+/g, ' ').trim());
   }
   search(): void {
     const query = this.query().trim();
@@ -336,11 +319,11 @@ export class SeriesPage {
       return;
     }
     this.lastSubmittedQuery.set(query);
-    this.load(query ? this.api.searchSeries(query) : this.api.trendingSeries());
+    this.load(query ? this.api.searchSeries(query, 'pt-BR', 1, this.sortTouched() ? this.sortBy() : undefined) : this.api.trendingSeries('pt-BR', 1, this.sortBy()));
   }
   retry(): void {
     const query = this.lastSubmittedQuery();
-    this.load(query ? this.api.searchSeries(query) : this.api.trendingSeries());
+    this.load(query ? this.api.searchSeries(query, 'pt-BR', 1, this.sortTouched() ? this.sortBy() : undefined) : this.api.trendingSeries('pt-BR', 1, this.sortBy()));
   }
   selectFilter(filter: SeriesFilter): void {
     if (filter === this.activeFilter()) return;
@@ -353,10 +336,10 @@ export class SeriesPage {
     this.loadTrending();
   }
   posterUrl(item: CatalogSeries): string {
-    return item.posterPath ? `https://image.tmdb.org/t/p/w342${item.posterPath}` : '';
+    return tmdbImage(item.posterPath, 'poster-card');
   }
   backdropUrl(item: CatalogSeries): string {
-    return item.backdropPath ? `https://image.tmdb.org/t/p/w1280${item.backdropPath}` : '';
+    return tmdbImage(item.backdropPath, 'backdrop-hero');
   }
   year(item: CatalogSeries): string {
     return item.firstAirDate?.slice(0, 4) ?? 'Sem data';
@@ -370,6 +353,7 @@ export class SeriesPage {
   setSort(event: Event): void {
     this.sortTouched.set(true);
     this.sortBy.set((event.target as HTMLSelectElement).value as Sort);
+    this.retry();
   }
   loadMore(): void {
     if (this.loadingMoreSeries() || !this.hasMoreSeries()) return;
@@ -377,18 +361,18 @@ export class SeriesPage {
     const requestVersion = this.requestVersion;
     const query = this.lastSubmittedQuery();
     const request = query
-      ? this.api.searchSeries(query, 'pt-BR', nextPage)
-      : this.api.trendingSeries('pt-BR', nextPage);
+      ? this.api.searchSeries(query, 'pt-BR', nextPage, this.sortTouched() ? this.sortBy() : undefined)
+      : this.api.trendingSeries('pt-BR', nextPage, this.sortBy());
     this.loadingMoreSeries.set(true);
     request.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (values) => {
+      next: (page) => {
         if (requestVersion !== this.requestVersion) return;
         this.series.update((current) => {
           const existingIds = new Set(current.map((item) => item.tmdbId));
-          return [...current, ...values.filter((item) => !existingIds.has(item.tmdbId))];
+          return [...current, ...page.items.filter((item) => !existingIds.has(item.tmdbId))];
         });
-        this.currentPage.set(nextPage);
-        this.hasMoreSeries.set(values.length >= 20);
+        this.currentPage.set(page.page);
+        this.hasMoreSeries.set(page.hasNext);
         this.loadingMoreSeries.set(false);
       },
       error: () => {
@@ -475,22 +459,21 @@ export class SeriesPage {
     });
   }
   private loadTrending(): void {
-    this.load(this.api.trendingSeries());
+    this.load(this.api.trendingSeries('pt-BR', 1, this.sortBy()));
   }
-  private load(request: Observable<CatalogSeries[]>): void {
+  private load(request: Observable<CatalogPageResponse<CatalogSeries>>): void {
     const requestVersion = ++this.requestVersion;
     this.activeRequest?.unsubscribe();
     this.viewState.set('loading');
     this.unavailablePosterIds.set(new Set());
     this.activeRequest = request.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (values) => {
+      next: (page) => {
         if (requestVersion !== this.requestVersion) return;
-        this.series.set(this.uniqueSeries(values));
+        this.series.set(this.uniqueSeries(page.items));
         this.spotlightIndex.set(0);
         this.currentPage.set(1);
-        this.hasMoreSeries.set(values.length >= 20);
+        this.hasMoreSeries.set(page.hasNext);
         this.loadingMoreSeries.set(false);
-        this.sortTouched.set(false);
         this.viewState.set('ready');
         this.libraryApi
           .plannedSeries()

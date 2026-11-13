@@ -1,9 +1,12 @@
+import { Location } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 
+import { SearchHistoryService } from '../core/search-history.service';
+import { tmdbImage } from '../core/tmdb-image';
 import { CatalogApiService, CatalogMovie, MovieDetails } from '../core/catalog-api.service';
 import { DownloadsApiService } from '../core/downloads-api.service';
 import { LibraryApiService } from '../core/library-api.service';
@@ -19,17 +22,17 @@ import { isDesktopApp } from '../core/api-url';
   template: `
     @switch (state()) {
       @case ('loading') {
-        <div class="page details-state" aria-live="polite"><i class="ph ph-spinner-gap"></i><p>Carregando detalhes do filme.</p></div>
+        <div class="page details-skeleton" aria-label="Carregando detalhes"><div class="skeleton-hero"></div><div class="skeleton-body"><span class="skeleton-poster"></span><div class="skeleton-copy"><i></i><b></b><em></em><em></em><div><small></small><small></small><small></small></div></div></div><div class="skeleton-lines"><i></i><i></i><i></i></div></div>
       }
       @case ('error') {
-        <div class="page details-state details-error"><i class="ph ph-warning-circle"></i><div><strong>Não foi possível carregar este filme.</strong><p>{{ errorMessage() }}</p><a class="btn btn-quiet" routerLink="/catalog">Voltar ao catálogo</a></div></div>
+        <div class="page details-state details-error"><i class="ph ph-warning-circle"></i><div><strong>Não foi possível carregar este filme.</strong><p>{{ errorMessage() }}</p><button class="btn btn-quiet" type="button" (click)="backToCatalog()">Voltar ao catálogo</button></div></div>
       }
       @default {
         @if (movie(); as details) {
           <section class="details-hero" aria-labelledby="movie-title">
             @if (details.backdropPath) { <img [src]="backdropUrl(details)" [alt]="'Cena de ' + details.title" fetchpriority="high" decoding="async" /> }
             <div class="details-shade"></div>
-            <div class="page details-hero-content"><a class="back-link" routerLink="/catalog"><i class="ph ph-arrow-left"></i>Catálogo</a></div>
+            <div class="page details-hero-content"><button class="back-link" type="button" (click)="backToCatalog()"><i class="ph ph-arrow-left"></i>Catálogo</button></div>
           </section>
 
           <main class="page details-content">
@@ -63,6 +66,7 @@ import { isDesktopApp } from '../core/api-url';
 })
 export class MovieDetailsPage {
   private readonly catalogApi = inject(CatalogApiService);
+  private readonly location = inject(Location);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
   private readonly releasesApi = inject(ReleasesApiService);
@@ -70,6 +74,7 @@ export class MovieDetailsPage {
   private readonly libraryApi = inject(LibraryApiService);
   private readonly sanitizer = inject(DomSanitizer);
   private readonly desktopFile = inject(DesktopFileService);
+  private readonly searchHistory = inject(SearchHistoryService);
 
   readonly state = signal<'loading' | 'ready' | 'error'>('loading');
   readonly movie = signal<MovieDetails | null>(null);
@@ -94,17 +99,21 @@ export class MovieDetailsPage {
     });
   }
 
+  backToCatalog(): void {
+    this.location.back();
+  }
+
   backdropUrl(movie: MovieDetails): string {
-    return movie.backdropPath ? `https://image.tmdb.org/t/p/w1280${movie.backdropPath}` : '';
+    return tmdbImage(movie.backdropPath, 'backdrop-hero');
   }
 
   posterUrl(movie: MovieDetails): string {
-    return movie.posterPath ? `https://image.tmdb.org/t/p/w342${movie.posterPath}` : '';
+    return tmdbImage(movie.posterPath, 'poster-detail');
   }
 
-  profileUrl(path: string): string { return `https://image.tmdb.org/t/p/w185${path}`; }
+  profileUrl(path: string): string { return tmdbImage(path, 'cast'); }
 
-  recommendationPosterUrl(movie: MovieDetails['recommendations'][number]): string { return movie.posterPath ? `https://image.tmdb.org/t/p/w342${movie.posterPath}` : ''; }
+  recommendationPosterUrl(movie: MovieDetails['recommendations'][number]): string { return tmdbImage(movie.posterPath, 'poster-detail'); }
 
   trailerEmbedUrl(trailerUrl: string): SafeResourceUrl {
     const videoId = new URL(trailerUrl).searchParams.get('v');
@@ -158,6 +167,7 @@ export class MovieDetailsPage {
     this.catalogApi.details(tmdbId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (details) => {
         this.movie.set(details);
+        this.searchHistory.rememberTitle({ mediaType: 'MOVIE', tmdbId: details.tmdbId, title: details.title, subtitle: this.year(details), posterPath: details.posterPath });
         this.state.set('ready');
         this.libraryApi.isPlanned(tmdbId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
           next: (status) => this.libraryAction.set(status.planned ? 'added' : 'idle'),

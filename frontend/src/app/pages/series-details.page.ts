@@ -4,6 +4,8 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { catchError, of, switchMap } from 'rxjs';
 
+import { SearchHistoryService } from '../core/search-history.service';
+import { tmdbImage } from '../core/tmdb-image';
 import { CatalogApiService, SeasonDetails, SeriesDetails, SeriesEpisode, SeriesSeason } from '../core/catalog-api.service';
 import { LibraryApiService } from '../core/library-api.service';
 import { ReleaseOption, ReleasesApiService } from '../core/releases-api.service';
@@ -71,7 +73,7 @@ import { isDesktopApp } from '../core/api-url';
           </section>
         </div>
       }
-    } @else { <div class="page details-state"><i class="ph ph-spinner-gap"></i><p>Carregando detalhes da série.</p></div> }
+    } @else { <div class="page details-skeleton" aria-label="Carregando detalhes"><div class="skeleton-hero"></div><div class="skeleton-body"><span class="skeleton-poster"></span><div class="skeleton-copy"><i></i><b></b><em></em><em></em><div><small></small><small></small><small></small></div></div></div><div class="skeleton-lines"><i></i><i></i><i></i></div></div> }
   `,
 })
 export class SeriesDetailsPage {
@@ -83,6 +85,7 @@ export class SeriesDetailsPage {
   private readonly desktopFile = inject(DesktopFileService);
   private readonly sanitizer = inject(DomSanitizer);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly searchHistory = inject(SearchHistoryService);
   readonly details = signal<SeriesDetails | null>(null);
   readonly selectedSeason = signal<SeriesSeason | null>(null);
   readonly seasonSliderValue = signal(0);
@@ -100,6 +103,7 @@ export class SeriesDetailsPage {
   constructor() {
     this.route.paramMap.pipe(switchMap(params => this.api.seriesDetails(Number(params.get('tmdbId'))).pipe(catchError(() => of(null)))), takeUntilDestroyed(this.destroyRef)).subscribe(data => {
       this.details.set(data); this.libraryAction.set('idle'); this.closeReleases();
+      if (data) this.searchHistory.rememberTitle({ mediaType: 'SERIES', tmdbId: data.series.tmdbId, title: data.series.name, subtitle: data.series.firstAirDate?.slice(0, 4) ?? 'Série', posterPath: data.series.posterPath });
       if (data) this.libraryApi.isSeriesPlanned(data.series.tmdbId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(value => this.libraryAction.set(value.planned ? 'added' : 'idle'));
       if (data) this.libraryApi.favorites().pipe(takeUntilDestroyed(this.destroyRef)).subscribe(items => this.isFavorite.set(items.some(item => item.mediaType === 'SERIES' && item.tmdbId === data.series.tmdbId)));
       const first = data?.seasons[0]; if (data && first) this.selectSeason(data.series.tmdbId, first);
@@ -122,10 +126,10 @@ export class SeriesDetailsPage {
   acquisitionRef(release: ReleaseOption): string { return release.magnetUrl || release.downloadUrl || ''; }
   releaseKey(release: ReleaseOption): string { return this.acquisitionRef(release) || release.infoUrl || release.title; }
   size(bytes: number | null): string { return bytes ? `${(bytes / 1_000_000_000).toFixed(1)} GB` : 'Tamanho não informado'; }
-  backdropUrl(path: string): string { return `https://image.tmdb.org/t/p/w1280${path}`; }
-  posterUrl(path: string): string { return `https://image.tmdb.org/t/p/w342${path}`; }
-  profileUrl(path: string): string { return `https://image.tmdb.org/t/p/w185${path}`; }
-  stillUrl(episode: SeriesEpisode): string { return `https://image.tmdb.org/t/p/w300${episode.stillPath}`; }
+  backdropUrl(path: string): string { return tmdbImage(path, 'backdrop-hero'); }
+  posterUrl(path: string): string { return tmdbImage(path, 'poster-detail'); }
+  profileUrl(path: string): string { return tmdbImage(path, 'cast'); }
+  stillUrl(episode: SeriesEpisode): string { return tmdbImage(episode.stillPath, 'episode'); }
   year(value: string | null): string { return value?.slice(0, 4) ?? 'Sem data'; }
   rating(value: number | null): string { return value?.toFixed(1) ?? '—'; }
   padded(value: number): string { return value.toString().padStart(2, '0'); }

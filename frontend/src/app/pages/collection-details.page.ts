@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { tmdbImage } from '../core/tmdb-image';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { map, switchMap } from 'rxjs';
@@ -43,7 +44,7 @@ export class CollectionDetailsPage {
     });
   }
 
-  posterUrl(item: FavoriteItem): string { return `https://image.tmdb.org/t/p/w342${item.posterPath}`; }
+  posterUrl(item: FavoriteItem): string { return tmdbImage(item.posterPath, 'poster-card'); }
 
   removeItem(collection: LibraryCollection, item: FavoriteItem): void {
     this.libraryApi.removeFromCollection(collection.id, item.mediaType, item.tmdbId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({

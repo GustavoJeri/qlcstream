@@ -12,7 +12,7 @@
 .download-progress > div:first-child { display: flex; justify-content: space-between; gap: 14px; margin-bottom: 8px; font-size: 12px; }
 .download-progress strong { color: var(--accent); }
 .download-progress span { color: var(--muted); }
-.download-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 10px; }.download-actions .text-action { border: 0; padding: 0; background: transparent; cursor: pointer; }.download-actions .danger-action { color: var(--danger); }
+.download-actions { display: flex; align-items:center; justify-content: flex-end; gap: 12px; margin-top: 10px; }.download-actions .text-action { border: 0; padding: 0; background: transparent; cursor: pointer; }.download-actions .text-action:disabled,.priority-actions button:disabled{cursor:default;opacity:.45}.download-actions .danger-action { color: var(--danger); }.priority-actions{display:inline-flex;align-items:center;gap:2px;padding:1px;border:1px solid var(--line);border-radius:5px}.priority-actions button{width:22px;height:20px;display:grid;place-items:center;border:0;border-radius:3px;color:var(--muted);background:transparent}.priority-actions button:hover{color:var(--accent);background:var(--surface-2)}
 .progress-track { height: 5px; overflow: hidden; border-radius: 4px; background: var(--surface-3); }
 .progress-track span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
 .empty-downloads, .downloads-state { min-height: 260px; display: flex; align-items: center; gap: 20px; padding: 34px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
@@ -22,3 +22,5 @@
 .downloads-error > i { color: var(--danger); }
 @media (max-width: 680px) { .download-row { grid-template-columns: 42px minmax(0, 1fr); gap: 12px; padding: 13px; } .download-poster { width: 42px; height: 60px; } .download-progress { grid-column: 1 / -1; } }
 @media (max-width: 480px) { .empty-downloads, .downloads-state { align-items: flex-start; padding: 25px; } }
+
+.retry-action{color:var(--accent)!important}.retry-action i{margin-right:5px}

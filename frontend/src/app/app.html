@@ -1,4 +1,4 @@
-<div class="app-shell" [class.desktop-window]="desktop()" [attr.data-theme]="theme()">
+<div class="app-shell" [class.desktop-window]="desktop()" [class.desktop-macos]="macDesktop()" [class.desktop-windows]="windowsDesktop()" [attr.data-theme]="theme()">
   <header class="topbar" (mousedown)="startWindowDrag($event)">
     <div class="topbar-inner">
       <a class="brand" routerLink="/catalog" aria-label="QLC Stream">
@@ -17,14 +17,20 @@
         <i class="ph ph-magnifying-glass" aria-hidden="true"></i>
         <label class="sr-only" for="global-catalog-search">Buscar filmes e pessoas</label>
         <input id="global-catalog-search" type="search" autocomplete="off" placeholder="Buscar filmes, séries e pessoas" [value]="globalQuery()" (input)="updateGlobalQuery($event)" (focus)="openAutocomplete()" (blur)="closeAutocomplete()" />
-        @if (autocompleteOpen() && globalQuery().trim().length >= 2) {
-          <div class="autocomplete-list" role="listbox" aria-label="Resultados encontrados">
+        @if (autocompleteOpen()) {
+          <div class="autocomplete-list" role="listbox" [attr.aria-label]="globalQuery().trim().length >= 2 ? 'Resultados encontrados' : 'Histórico de busca'">
+            @if (globalQuery().trim().length < 2) {
+              @if (recentSearches().length) { <div class="autocomplete-history-head"><p class="autocomplete-group">Pesquisas recentes</p><button type="button" (mousedown)="$event.preventDefault()" (click)="clearSearchHistory()">Limpar</button></div>@for (query of recentSearches(); track query) { <button type="button" role="option" (mousedown)="$event.preventDefault()" (click)="selectRecentSearch(query)"><i class="ph ph-clock-counter-clockwise" aria-hidden="true"></i><span><strong>{{ query }}</strong><small>Pesquisar novamente</small></span></button> } }
+              @if (recentTitles().length) { <div class="autocomplete-history-head"><p class="autocomplete-group">Visitados recentemente</p><button type="button" (mousedown)="$event.preventDefault()" (click)="clearRecentTitles()">Limpar</button></div>@for (item of recentTitles(); track item.mediaType + item.tmdbId) { <button type="button" role="option" (mousedown)="$event.preventDefault()" (click)="selectRecentTitle(item)">@if (item.posterPath) { <img [src]="'https://image.tmdb.org/t/p/w92' + item.posterPath" alt="" /> } @else { <i class="ph" [class.ph-film-strip]="item.mediaType === 'MOVIE'" [class.ph-television]="item.mediaType === 'SERIES'" aria-hidden="true"></i> }<span><strong>{{ item.title }}</strong><small>{{ item.subtitle }}</small></span></button> } }
+              @if (!recentSearches().length && !recentTitles().length) { <p class="autocomplete-feedback">Suas pesquisas e títulos abertos aparecerão aqui.</p> }
+            } @else {
             @if (autocompleteState() === 'loading') { <p class="autocomplete-feedback"><i class="ph ph-spinner-gap"></i>Buscando no catálogo</p> }
             @else if (suggestions().length || peopleSuggestions().length || seriesSuggestions().length) {
               @if (suggestions().length) { <p class="autocomplete-group">Filmes</p>@for (movie of suggestions(); track movie.tmdbId) { <button type="button" role="option" (mousedown)="$event.preventDefault()" (click)="selectSuggestion(movie)">@if (movie.posterPath) { <img [src]="'https://image.tmdb.org/t/p/w92' + movie.posterPath" [alt]="''" /> } @else { <i class="ph ph-film-strip" aria-hidden="true"></i> }<span><strong>{{ movie.title }}</strong><small>{{ movie.releaseDate?.slice(0, 4) || 'Sem data' }}</small></span></button> } }
               @if (seriesSuggestions().length) { <p class="autocomplete-group">Séries</p>@for (series of seriesSuggestions(); track series.tmdbId) { <button type="button" role="option" (mousedown)="$event.preventDefault()" (click)="selectSeries(series)">@if (series.posterPath) { <img [src]="'https://image.tmdb.org/t/p/w92' + series.posterPath" [alt]="''" /> } @else { <i class="ph ph-television" aria-hidden="true"></i> }<span><strong>{{ series.name }}</strong><small>{{ series.firstAirDate?.slice(0, 4) || 'Sem data' }}</small></span></button> } }
               @if (peopleSuggestions().length) { <p class="autocomplete-group">Pessoas</p>@for (person of peopleSuggestions(); track person.tmdbId) { <button class="person-suggestion" type="button" role="option" (mousedown)="$event.preventDefault()" (click)="selectPerson(person)">@if (person.profilePath) { <img [src]="'https://image.tmdb.org/t/p/w92' + person.profilePath" [alt]="''" /> } @else { <i class="ph ph-user" aria-hidden="true"></i> }<span><strong>{{ person.name }}</strong><small>Pessoa</small></span></button> } }
             } @else { <p class="autocomplete-feedback">{{ autocompleteState() === 'error' ? 'Não foi possível buscar agora.' : 'Nenhum resultado encontrado.' }}</p> }
+            }
           </div>
         }
       </form>
@@ -48,7 +54,7 @@
         <a class="settings-link" routerLink="/settings" routerLinkActive="active" aria-label="Configurações"><i class="ph ph-gear-six" aria-hidden="true"></i></a>
       </div>
     </div>
-    @if (desktop()) {
+    @if (windowsDesktop()) {
       <div class="window-controls" aria-label="Controles da janela">
         <button type="button" class="window-control" aria-label="Minimizar" (click)="$event.stopPropagation(); minimizeWindow()"><i class="ph ph-minus"></i></button>
         <button type="button" class="window-control" [attr.aria-label]="maximized() ? 'Restaurar' : 'Maximizar'" (click)="$event.stopPropagation(); toggleMaximize()"><i class="ph" [class.ph-square]="!maximized()" [class.ph-corners-out]="maximized()"></i></button>

@@ -18,6 +18,8 @@ import org.springframework.web.bind.annotation.RestController;
 import dev.qlcstream.catalog.application.port.in.BrowseCatalogUseCase;
 import dev.qlcstream.catalog.application.port.in.ViewMovieDetailsUseCase;
 import dev.qlcstream.catalog.domain.CatalogCollection;
+import dev.qlcstream.catalog.domain.CatalogPage;
+import dev.qlcstream.catalog.domain.CatalogSort;
 import dev.qlcstream.catalog.domain.Movie;
 import dev.qlcstream.catalog.domain.MovieDetails;
 import dev.qlcstream.catalog.domain.Person;
@@ -45,26 +47,40 @@ public class CatalogController {
     }
 
     @GetMapping("/trending")
-    List<CatalogMovieResponse> trending(
+    CatalogPageResponse<CatalogMovieResponse> trending(
             @RequestParam(defaultValue = "pt-BR") String language,
-            @RequestParam(defaultValue = "1") @Min(1) @Max(500) int page) {
-        return browseCatalog.trending(language, page).stream().map(CatalogMovieResponse::from).toList();
+            @RequestParam(defaultValue = "1") @Min(1) @Max(500) int page,
+            @RequestParam(defaultValue = "POPULARITY") CatalogSort sort) {
+        return CatalogPageResponse.from(browseCatalog.trending(language, page, sort), CatalogMovieResponse::from);
     }
 
     @GetMapping("/discover")
-    List<CatalogMovieResponse> discover(
+    CatalogPageResponse<CatalogMovieResponse> discover(
             @RequestParam(defaultValue = "POPULAR") CatalogCollection collection,
             @RequestParam(defaultValue = "pt-BR") String language,
-            @RequestParam(defaultValue = "1") @Min(1) @Max(500) int page) {
-        return browseCatalog.discover(collection, language, page).stream().map(CatalogMovieResponse::from).toList();
+            @RequestParam(defaultValue = "1") @Min(1) @Max(500) int page,
+            @RequestParam(defaultValue = "POPULARITY") CatalogSort sort) {
+        return CatalogPageResponse.from(browseCatalog.discover(collection, language, page, sort), CatalogMovieResponse::from);
     }
 
     @GetMapping("/search")
-    List<CatalogMovieResponse> search(
+    CatalogPageResponse<CatalogMovieResponse> search(
             @RequestParam @NotBlank String query,
             @RequestParam(defaultValue = "pt-BR") String language,
-            @RequestParam(defaultValue = "1") @Min(1) @Max(500) int page) {
-        return browseCatalog.search(query, language, page).stream().map(CatalogMovieResponse::from).toList();
+            @RequestParam(defaultValue = "1") @Min(1) @Max(500) int page,
+            @RequestParam(required = false) CatalogSort sort) {
+        return CatalogPageResponse.from(browseCatalog.search(query, language, page, sort), CatalogMovieResponse::from);
+    }
+
+    @GetMapping("/recommendations")
+    List<PersonalizedRecommendationResponse> recommendations(
+            @RequestParam(required = false) List<Long> movieIds,
+            @RequestParam(required = false) List<Long> seriesIds,
+            @RequestParam(defaultValue = "pt-BR") String language,
+            @RequestParam(defaultValue = "0") @Min(0) @Max(20) int page) {
+        return catalogService.personalizedRecommendations(movieIds == null ? List.of() : movieIds,
+                seriesIds == null ? List.of() : seriesIds, language, page).stream()
+                .map(PersonalizedRecommendationResponse::from).toList();
     }
 
     @GetMapping("/people/search")
@@ -78,15 +94,16 @@ public class CatalogController {
     }
 
     @GetMapping("/series/trending")
-    List<SeriesResponse> trendingSeries(@RequestParam(defaultValue = "pt-BR") String language,
-            @RequestParam(defaultValue = "1") @Min(1) @Max(500) int page) {
-        return catalogService.trendingSeries(language, page).stream().map(SeriesResponse::from).toList();
+    CatalogPageResponse<SeriesResponse> trendingSeries(@RequestParam(defaultValue = "pt-BR") String language,
+            @RequestParam(defaultValue = "1") @Min(1) @Max(500) int page,
+            @RequestParam(defaultValue = "POPULARITY") CatalogSort sort) {
+        return CatalogPageResponse.from(catalogService.trendingSeries(language, page, sort), SeriesResponse::from);
     }
 
     @GetMapping("/series/search")
-    List<SeriesResponse> searchSeries(@RequestParam @NotBlank String query, @RequestParam(defaultValue = "pt-BR") String language,
-            @RequestParam(defaultValue = "1") @Min(1) @Max(500) int page) {
-        return catalogService.searchSeries(query, language, page).stream().map(SeriesResponse::from).toList();
+    CatalogPageResponse<SeriesResponse> searchSeries(@RequestParam @NotBlank String query, @RequestParam(defaultValue = "pt-BR") String language,
+            @RequestParam(defaultValue = "1") @Min(1) @Max(500) int page, @RequestParam(required = false) CatalogSort sort) {
+        return CatalogPageResponse.from(catalogService.searchSeries(query, language, page, sort), SeriesResponse::from);
     }
 
     @GetMapping("/series/{tmdbId}")
@@ -105,6 +122,12 @@ public class CatalogController {
             @PathVariable @Positive long tmdbId,
             @RequestParam(defaultValue = "pt-BR") String language) {
         return MovieDetailsResponse.from(viewMovieDetails.view(tmdbId, language));
+    }
+
+    record CatalogPageResponse<T>(List<T> items, int page, int totalPages, long totalResults, boolean hasNext) {
+        static <T, R> CatalogPageResponse<R> from(CatalogPage<T> page, java.util.function.Function<T, R> mapper) {
+            return new CatalogPageResponse<>(page.items().stream().map(mapper).toList(), page.page(), page.totalPages(), page.totalResults(), page.hasNext());
+        }
     }
 
     record CatalogMovieResponse(
@@ -191,4 +214,13 @@ public class CatalogController {
     record EpisodeResponse(long tmdbId, int episodeNumber, String name, String overview, LocalDate airDate, String stillPath, int runtimeMinutes) {
         static EpisodeResponse from(SeriesEpisode episode) { return new EpisodeResponse(episode.tmdbId(), episode.episodeNumber(), episode.name(), episode.overview(), episode.airDate(), episode.stillPath(), episode.runtimeMinutes()); }
     }
+    record PersonalizedRecommendationResponse(String mediaType, long tmdbId, String title, String originalTitle,
+            LocalDate releaseDate, String posterPath, BigDecimal voteAverage) {
+        static PersonalizedRecommendationResponse from(CatalogService.PersonalizedRecommendation item) {
+            return new PersonalizedRecommendationResponse(item.mediaType(), item.tmdbId(), item.title(), item.originalTitle(),
+                    item.releaseDate(), item.posterPath(), item.voteAverage());
+        }
+    }
+
+
 }

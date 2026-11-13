@@ -2,6 +2,7 @@ package dev.qlcstream.catalog.infrastructure.tmdb;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.Duration;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Objects;
@@ -14,6 +15,8 @@ import org.springframework.web.client.RestClient;
 
 import dev.qlcstream.catalog.application.port.out.MovieMetadataProvider;
 import dev.qlcstream.catalog.domain.CatalogCollection;
+import dev.qlcstream.catalog.domain.CatalogPage;
+import dev.qlcstream.catalog.domain.CatalogSort;
 import dev.qlcstream.catalog.domain.Movie;
 import dev.qlcstream.catalog.domain.MovieDetails;
 import dev.qlcstream.catalog.domain.Person;
@@ -29,15 +32,18 @@ public class TmdbMovieAdapter implements MovieMetadataProvider {
 
     private final RestClient client;
     private final TmdbProperties properties;
+    private final TmdbCatalogCache cache;
 
-    public TmdbMovieAdapter(TmdbProperties properties) {
+    public TmdbMovieAdapter(TmdbProperties properties, TmdbCatalogCache cache) {
         this.properties = properties;
+        this.cache = cache;
         this.client = RestClient.builder().baseUrl(properties.baseUrl()).build();
     }
 
     @Override
-    public List<Movie> trending(String language, int page) {
+    public CatalogPage<Movie> trending(String language, int page, CatalogSort sort) {
         requireConfiguration();
+        return cache.get(cache.key("trending-movie", language, page, sort), Duration.ofMinutes(10), () -> {
         var response = client.get()
                 .uri(uri -> uri.path("/trending/movie/week")
                         .queryParam("language", language)
@@ -47,11 +53,13 @@ public class TmdbMovieAdapter implements MovieMetadataProvider {
                 .retrieve()
                 .body(TmdbMoviePage.class);
         return map(response);
+        });
     }
 
     @Override
-    public List<Movie> discover(CatalogCollection collection, String language, int page) {
+    public CatalogPage<Movie> discover(CatalogCollection collection, String language, int page, CatalogSort sort) {
         requireConfiguration();
+        return cache.get(cache.key("discover-movie", collection, language, page, sort), Duration.ofMinutes(10), () -> {
         var request = client.get()
                 .uri(uri -> {
                     var builder = uri.path("/discover/movie")
@@ -80,11 +88,13 @@ public class TmdbMovieAdapter implements MovieMetadataProvider {
                 .retrieve()
                 .body(TmdbMoviePage.class);
         return map(request);
+        });
     }
 
     @Override
-    public List<Movie> search(String query, String language, int page) {
+    public CatalogPage<Movie> search(String query, String language, int page, CatalogSort sort) {
         requireConfiguration();
+        return cache.get(cache.key("search-movie", query, language, page, sort), Duration.ofMinutes(3), () -> {
         var response = client.get()
                 .uri(uri -> uri.path("/search/movie")
                         .queryParam("query", query)
@@ -96,11 +106,13 @@ public class TmdbMovieAdapter implements MovieMetadataProvider {
                 .retrieve()
                 .body(TmdbMoviePage.class);
         return map(response);
+        });
     }
 
     @Override
     public MovieDetails details(long tmdbId, String language) {
         requireConfiguration();
+        return cache.get(cache.key("movie-details", tmdbId, language), Duration.ofMinutes(30), () -> {
         var response = client.get()
             .uri(uri -> uri.path("/movie/{tmdbId}")
                         .queryParam("language", language)
@@ -113,6 +125,7 @@ public class TmdbMovieAdapter implements MovieMetadataProvider {
             throw new IllegalStateException("TMDB não retornou detalhes para o filme solicitado.");
         }
         return response.toDomain();
+        });
     }
 
     @Override
@@ -135,31 +148,48 @@ public class TmdbMovieAdapter implements MovieMetadataProvider {
     }
 
     @Override
-    public List<Series> trendingSeries(String language, int page) {
+    public CatalogPage<Series> trendingSeries(String language, int page, CatalogSort sort) {
         requireConfiguration();
+        return cache.get(cache.key("trending-series", language, page, sort), Duration.ofMinutes(10), () -> {
         var response = client.get().uri(uri -> uri.path("/trending/tv/week").queryParam("language", language)
                 .queryParam("page", page).build()).header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.apiToken())
                 .retrieve().body(TmdbSeriesPage.class);
-        return response == null || response.results() == null ? List.of() : response.results().stream().map(TmdbSeries::toDomain).toList();
+        return map(response);
+        });
     }
 
     @Override
-    public List<Series> searchSeries(String query, String language, int page) {
+    public CatalogPage<Series> searchSeries(String query, String language, int page, CatalogSort sort) {
         requireConfiguration();
+        return cache.get(cache.key("search-series", query, language, page, sort), Duration.ofMinutes(3), () -> {
         var response = client.get().uri(uri -> uri.path("/search/tv").queryParam("query", query)
                 .queryParam("language", language).queryParam("page", page).queryParam("include_adult", false).build())
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.apiToken()).retrieve().body(TmdbSeriesPage.class);
-        return response == null || response.results() == null ? List.of() : response.results().stream().map(TmdbSeries::toDomain).toList();
+        return map(response);
+        });
+    }
+
+    @Override
+    public List<Series> recommendedSeries(long tmdbId, String language) {
+        requireConfiguration();
+        return cache.get(cache.key("series-recommendations", tmdbId, language), Duration.ofMinutes(30), () -> {
+            var response = client.get().uri(uri -> uri.path("/tv/{tmdbId}/recommendations")
+                    .queryParam("language", language).build(tmdbId))
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.apiToken()).retrieve().body(TmdbSeriesPage.class);
+            return map(response).items().stream().limit(8).toList();
+        });
     }
 
     @Override
     public SeriesDetails seriesDetails(long tmdbId, String language) {
         requireConfiguration();
+        return cache.get(cache.key("series-details", tmdbId, language), Duration.ofMinutes(30), () -> {
         var response = client.get().uri(uri -> uri.path("/tv/{tmdbId}").queryParam("language", language)
                 .queryParam("append_to_response", "credits,videos").build(tmdbId))
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.apiToken()).retrieve().body(TmdbSeriesDetails.class);
         if (response == null) throw new IllegalStateException("TMDB não retornou detalhes para a série solicitada.");
         return response.toDomain();
+        });
     }
 
     @Override
@@ -178,11 +208,16 @@ public class TmdbMovieAdapter implements MovieMetadataProvider {
         }
     }
 
-    private static List<Movie> map(TmdbMoviePage page) {
-        if (page == null || page.results() == null) {
-            return List.of();
-        }
-        return page.results().stream().map(TmdbMovie::toDomain).toList();
+    private static CatalogPage<Movie> map(TmdbMoviePage page) {
+        if (page == null) return new CatalogPage<>(List.of(), 1, 1, 0);
+        var items = page.results() == null ? List.<Movie>of() : page.results().stream().map(TmdbMovie::toDomain).toList();
+        return new CatalogPage<>(items, page.page(), page.totalPages(), page.totalResults());
+    }
+
+    private static CatalogPage<Series> map(TmdbSeriesPage page) {
+        if (page == null) return new CatalogPage<>(List.of(), 1, 1, 0);
+        var items = page.results() == null ? List.<Series>of() : page.results().stream().map(TmdbSeries::toDomain).toList();
+        return new CatalogPage<>(items, page.page(), page.totalPages(), page.totalResults());
     }
 
     private static LocalDate parseDate(String value) {
@@ -196,7 +231,7 @@ public class TmdbMovieAdapter implements MovieMetadataProvider {
         }
     }
 
-    private record TmdbMoviePage(List<TmdbMovie> results) {
+    private record TmdbMoviePage(int page, @JsonProperty("total_pages") int totalPages, @JsonProperty("total_results") long totalResults, List<TmdbMovie> results) {
     }
 
     private record TmdbMovie(
@@ -311,7 +346,7 @@ public class TmdbMovieAdapter implements MovieMetadataProvider {
     private record TmdbMovieCredits(List<TmdbMovie> cast, List<TmdbMovie> crew) {
     }
 
-    private record TmdbSeriesPage(List<TmdbSeries> results) {
+    private record TmdbSeriesPage(int page, @JsonProperty("total_pages") int totalPages, @JsonProperty("total_results") long totalResults, List<TmdbSeries> results) {
     }
 
     private record TmdbSeries(long id, String name, @JsonProperty("original_name") String originalName,

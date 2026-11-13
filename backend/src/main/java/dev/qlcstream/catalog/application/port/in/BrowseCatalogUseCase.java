@@ -1,15 +1,15 @@
 package dev.qlcstream.catalog.application.port.in;
 
-import java.util.List;
-
 import dev.qlcstream.catalog.domain.CatalogCollection;
+import dev.qlcstream.catalog.domain.CatalogPage;
+import dev.qlcstream.catalog.domain.CatalogSort;
 import dev.qlcstream.catalog.domain.Movie;
 
 public interface BrowseCatalogUseCase {
 
-    List<Movie> trending(String language, int page);
+    CatalogPage<Movie> trending(String language, int page, CatalogSort sort);
 
-    List<Movie> discover(CatalogCollection collection, String language, int page);
+    CatalogPage<Movie> discover(CatalogCollection collection, String language, int page, CatalogSort sort);
 
-    List<Movie> search(String query, String language, int page);
+    CatalogPage<Movie> search(String query, String language, int page, CatalogSort sort);
 }

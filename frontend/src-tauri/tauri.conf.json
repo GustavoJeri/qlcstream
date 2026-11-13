@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "QLC Stream",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "dev.qlcstream.desktop",
   "build": {
     "frontendDist": "../dist/frontend/browser",
@@ -19,7 +19,9 @@
         "minHeight": 640,
         "resizable": true,
         "fullscreen": false,
-        "decorations": false
+        "decorations": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {

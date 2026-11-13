@@ -54,7 +54,7 @@ export class DownloadsApiService {
 
   enqueueSeries(request: CreateSeriesDownloadRequest): Observable<SubmittedDownload> { return this.http.post<SubmittedDownload>(apiUrl('/api/downloads/series'), request); }
 
-  control(id: string, action: 'pause' | 'resume' | 'cancel'): Observable<void> {
+  control(id: string, action: 'pause' | 'resume' | 'retry' | 'priority_up' | 'priority_down' | 'cancel'): Observable<void> {
     return this.http.post<void>(apiUrl(`/api/downloads/${id}/${action.toUpperCase()}`), {});
   }
 }

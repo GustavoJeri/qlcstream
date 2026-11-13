@@ -26,6 +26,10 @@ qlc-stream:
   tmdb:
     base-url: https://api.themoviedb.org/3
     api-token: ${TMDB_API_TOKEN:}
+    cache:
+      max-entries: ${TMDB_CACHE_MAX_ENTRIES:300}
+      catalog-ttl: ${TMDB_CACHE_CATALOG_TTL:10m}
+      search-ttl: ${TMDB_CACHE_SEARCH_TTL:3m}
   prowlarr:
     base-url: ${PROWLARR_BASE_URL:}
     api-key: ${PROWLARR_API_KEY:}
