@@ -1,29 +1,55 @@
-# Assistente de primeira configuração — preparação da Issue #18
+# Assistente de primeira configuração — Issue #18
 
-Estado: iniciado, ainda sem assistente visual. As dependências #15, #16 e #17 estão integradas em `develop`. Esta preparação acrescenta os contratos de consulta, atualização e teste de candidato ao serviço HTTP da interface, preservando as operações anteriores de diagnóstico.
+Em **Configurar** (`/setup`), o aplicativo oferece etapas para catálogo, busca de fontes, motor e pasta. Um aviso convida a conferir configurações incompletas e problemas na pasta; o catálogo continua acessível quando busca ou downloads são adiados. Filmes, temporadas e episódios explicam a indisponibilidade das ações e apontam para o assistente.
 
-## Fluxo a implementar
+## Preservação e retomada
 
-1. Consultar o estado no servidor e oferecer a configuração quando incompleta, mantendo acesso ao catálogo quando TMDB estiver pronto.
-2. Apresentar catálogo, busca, motor e pasta em etapas, com instruções para obter credenciais e escolher fontes explicitamente.
-3. Carregar somente estado e campos públicos; nunca preencher um campo de segredo com conteúdo salvo. Segredo novo fica somente na memória do formulário e é descartado após salvar ou sair.
-4. Testar candidatos sem salvar; salvar exige ação distinta, incluindo confirmação para adotar a fonte gerenciada quando a instalação usa ambiente.
-5. Derivar a retomada dos valores persistidos, oferecendo adiar busca/downloads sem bloquear o catálogo. Reutilizar os diagnósticos de conexão e armazenamento, sem declarar compartilhamento físico comprovado quando for inconclusivo.
-6. Explicar nos detalhes de filmes e séries por que busca/downloads estão indisponíveis e oferecer acesso à etapa correspondente.
+Ao abrir, o assistente consulta os valores persistidos e seleciona a primeira integração sem configuração mínima. Se todas estiverem preenchidas, abre a pasta. É possível voltar a qualquer etapa para revisar. A retomada depende do estado do servidor, sem gravar progresso ou credenciais no navegador. Etapas opcionais adiadas continuam pendentes na próxima abertura.
 
-## Primeiro uso da chave
+Nenhuma configuração é salva ao abrir ou navegar. Uma integração por ambiente pode ser mantida sem qualquer PUT. Para adotar a fonte gerenciada, confirme a opção explícita e clique em **Salvar e continuar**. Segredos salvos e usuários não são retornados; campos vazios preservam os valores existentes. Um segredo digitado substitui o anterior somente ao salvar. Valores não salvos são descartados ao trocar de etapa ou sair, conforme o aviso da tela.
 
-A API da #17 exige arquivo de chave externo ao banco antes de persistir configurações gerenciadas. Isso ainda não pode ser resolvido pela interface: falta uma operação explícita para provisionar a chave numa instalação limpa, ou uma provisão segura na inicialização da instalação. Essa decisão precisa ser implementada e validada nesta etapa para cumprir o aceite de não editar arquivos. Não gerar nem substituir uma chave existente silenciosamente. Preservar a proteção contra troca de chave entregue na revisão da PR #32.
+**Testar sem salvar** usa o candidato no endpoint separado da Issue #17 e mostra sucesso, autenticação recusada, configuração ausente, endereço inválido ou falha de conexão. Salvar e testar são ações distintas. Uma falha de gravação conserva os campos; se houver falha de comunicação, consulte o estado do servidor antes de repetir, pois a resposta pode ter sido perdida após um commit.
 
-## Validação necessária para concluir a Issue
+## Proteção no primeiro uso
 
-- Instalação limpa e instalação configurada por ambiente, sem sobrescrita automática.
-- Candidato aceito/recusado, erro de comunicação e falha de persistência sem perda do formulário.
-- Voltar, adiar etapas opcionais, reabrir e retomar após reinício do backend.
-- Pasta inválida e recuperação; armazenamento inconclusivo não equivale a pronto.
-- Segredos ausentes de URLs, respostas, logs e armazenamento do navegador.
-- Fluxo visual e testes completos com serviços controlados e credenciais fictícias, sem iniciar downloads.
+A tela oferece **Criar chave de proteção** quando a chave não está disponível. A ação chama `POST /api/system/integration-settings/key`; `GET` no mesmo endereço retorna apenas `ready`. A chave nunca passa pela API. Ela é gerada com aleatoriedade criptográfica no servidor, em arquivo temporário exclusivo com permissão 0600 nos sistemas POSIX, sincronizada em disco e publicada por hard link sem substituir o destino. O arquivo temporário é removido ao final. O sistema de arquivos precisa suportar hard links; falhas são apresentadas sem expor conteúdo ou caminhos.
 
-A Issue #18 permanece aberta até implementar o fluxo completo, publicar a PR e concluir a revisão.
+O Compose prepara a pasta protegida para o usuário do backend e permite a criação explícita da chave. Prepara também `incoming` somente quando ausente, sem alterar conteúdo, proprietário ou permissões de um destino já existente. A configuração de mídia anterior e seu volume são preservados. Preparar diretórios não cria a chave: é necessária a ação explícita na tela ou a provisão administrativa anterior.
 
-Preparação validada em 13/11/2026: 23 testes da interface aprovados em Node 26, incluindo quatro novos testes do contrato HTTP; compilação de produção aprovada. Nenhuma etapa visual do assistente foi validada nesta preparação.
+Arquivo inválido existente não é substituído. Se uma chave já tiver sido usada pelo processo ou houver configurações gerenciadas, uma chave ausente não é regenerada. O bloqueio de mudança de chave da PR #32 permanece. Banco com configurações gerenciadas sem chave correspondente continua recusando a inicialização. Consulte [backup e recuperação](configuracao-integracoes.md). Fora do Compose, o administrador deve fornecer uma pasta protegida gravável ou provisionar a chave previamente.
+
+## Pasta e limites
+
+Salvar a pasta altera somente o destino de novos downloads e executa o diagnóstico já existente. A tela explica problemas de acesso e incompatibilidade do motor. Caminhos compatíveis mantêm a equivalência física **inconclusiva**. O assistente não cria diretórios arbitrários, não altera montagens, não move mídia, não instala indexadores, não cadastra contas e não inicia downloads. Fontes e credenciais continuam sendo escolhas explícitas.
+
+A detecção de integração configurada usa presença dos campos, sem prometer disponibilidade. O teste autenticado e a tela de diagnósticos continuam sendo a confirmação pontual de conexão. Para habilitar ações de download, a interface exige também diagnóstico de pasta compatível; isso não comprova equivalência física dos volumes. O backend continua sendo uma instalação administrativa local, com um processo por banco e sem nova autenticação administrativa.
+
+## Validação isolada
+
+Na raiz, sem usar o ambiente pessoal:
+
+```powershell
+docker compose --env-file docs/validation/integrations.env -f docs/validation/setup-compose.yaml up -d --build
+python docs/validation/test-setup.py
+```
+
+A fixture `qlcstream-setup-test` usa PostgreSQL, chave e mídia sintética em volumes próprios, com APIs simuladas sem operações de inclusão de torrents. Interface: `http://127.0.0.1:14218/setup`; API: porta 18088. O primeiro uso de um volume novo começa sem chave e sem credenciais. O roteiro é repetível: restaura somente configurações da fixture para ambiente, provisiona a chave de forma idempotente e usa credenciais fictícias.
+
+Para conferir pela tela: crie a chave; teste um token fictício inválido e depois `fictional_candidate` contra `http://mock:8000`; confirme adoção e salve TMDB. Use o catálogo com busca/motor adiados. Reinicie somente o backend da fixture e reabra o assistente: a etapa pendente deve reaparecer. Complete Prowlarr e qBittorrent com o mesmo endereço e segredo fictício, usando `fictional_user` no motor. Confira `missing` como pasta inválida e recupere com `incoming`. Reabra para revisar: os campos de segredo ficam vazios.
+
+Encerre apenas a fixture, preservando os seus volumes:
+
+```powershell
+docker compose --env-file docs/validation/integrations.env -f docs/validation/setup-compose.yaml down
+```
+
+## Evidências de 13/11/2026
+
+- Java 21/Linux: **67 testes aprovados**, sem falhas nem testes ignorados, e pacote do backend gerado. Provisão explícita, idempotência, recusa de substituição, recuperação e regressões anteriores preservadas.
+- Node 26: **31 testes aprovados** e compilação de produção aprovada. Cobrem adoção explícita, candidato sem gravação, preservação de formulário após erro, segredo omitido, retomada, adiamento, pasta inválida/recuperada e descarte de respostas antigas.
+- Arquivo de chave em pasta de teste do workspace montada no Docker: publicação por hard link conferida com o usuário do backend; teste de provisão também aprovado usando esse sistema de arquivos. A pasta de segredos real não foi usada.
+- Roteiro de API aprovado contra Spring Boot e PostgreSQL reais na fixture, incluindo reinício, candidato inválido, chave idempotente, catálogo independente e recuperação da pasta.
+- Edge na fixture limpa: conferidos criação explícita da chave, credencial recusada sem salvar, candidato válido, adoção, adiamento de busca/downloads, catálogo acessível, retomada após reinício, recuperação após indisponibilidade temporária do backend, etapas restantes, pasta inválida e recuperação, e revisão de configuração salva sem revelar segredos. O diagnóstico manteve o compartilhamento físico inconclusivo.
+- As APIs externas foram simuladas; contas pessoais e interoperabilidade com serviços externos reais não foram testadas. Nenhum download foi iniciado. Banco, serviços, configurações e mídia da instalação diária foram preservados.
+
+A entrega aguarda revisão em PR para `develop`. A Issue #18 permanece aberta até revisão e integração.

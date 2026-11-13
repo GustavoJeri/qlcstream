@@ -11,6 +11,7 @@
         <a routerLink="/series" routerLinkActive="active">Séries</a>
         <a routerLink="/downloads" routerLinkActive="active">Downloads</a>
         <a routerLink="/library" routerLinkActive="active">Biblioteca</a>
+        <a routerLink="/setup" routerLinkActive="active">Configurar</a>
       </nav>
 
       <form class="global-search" role="search" (submit)="searchCatalog($event)">
@@ -57,7 +58,8 @@
     }
   </header>
 
-  <main><router-outlet /></main>
+  <main><app-setup-banner />
+  <router-outlet /></main>
 
   <nav class="mobile-nav" aria-label="Navegação móvel">
     <a routerLink="/catalog" routerLinkActive="active"><i class="ph ph-film-slate"></i><span>Filmes</span></a>

@@ -1,6 +1,6 @@
 # Configuração persistente das integrações — Issue #17
 
-O backend permite preparar a configuração pela API. O assistente visual pertence à Issue #18. Esta API é administrativa e local, como o restante da instalação atual: mantenha as portas do Compose vinculadas a loopback; não a publique na internet. Não há autenticação administrativa nova nesta entrega.
+O backend permite preparar a configuração pela API. O [assistente visual da Issue #18](assistente-primeira-configuracao.md) usa estes contratos. Esta API é administrativa e local, como o restante da instalação atual: mantenha as portas do Compose vinculadas a loopback; não a publique na internet. Não há autenticação administrativa nova nesta entrega.
 
 ## Precedência e atualização
 
@@ -46,7 +46,7 @@ Os endpoints anteriores `/api/system/integrations` e `/check` são preservados. 
 
 Os registros de `integration_settings` contêm a configuração completa cifrada com AES-256-GCM, nonce aleatório por gravação e autenticação vinculada ao ID da integração. A chave **não fica no banco**. `INTEGRATION_SETTINGS_KEY_FILE` aponta para um arquivo com 32 bytes aleatórios codificados em Base64. Fora do Compose, use um arquivo com acesso restrito ao usuário do backend.
 
-No Compose principal, a pasta `data/integration-secrets` é montada somente para leitura. Antes de adotar a configuração gerenciada, provisione `data/integration-secrets/integration-settings.key`. Para gerar somente quando não existe, no PowerShell:
+No Compose principal, a pasta `data/integration-secrets` é protegida e montada para permitir a criação explícita da chave pelo backend. O assistente pode provisionar uma chave ausente mediante ação explícita. Como alternativa administrativa, antes de adotar a configuração gerenciada, provisione `data/integration-secrets/integration-settings.key`. Para gerar somente quando não existe, no PowerShell:
 
 ```powershell
 $keyDirectory = Join-Path (Get-Location) 'data/integration-secrets'
@@ -69,7 +69,7 @@ Instalações que só usam ambiente não precisam da chave. Se houver registro g
 
 Se não houver cópia recuperável, a decisão de abandonar os registros deve ser explícita: com o backend parado e depois de fazer backup do banco, remova somente as linhas escolhidas de `integration_settings` por administração do PostgreSQL. Ao iniciar novamente, essas integrações usarão o ambiente. Reconfigure-as conscientemente pela API; não apague outras tabelas, volumes ou mídia. Rotação automática da chave não faz parte desta entrega: trocar o arquivo sozinho torna os registros existentes ilegíveis.
 
-A interface atual não coleta esses segredos nem usa armazenamento do navegador para eles. Consumidores futuros devem mantê-los apenas durante a entrada/teste, sem persistir em localStorage, sessionStorage, URLs ou logs. Evite ferramentas que gravem histórico dos corpos das requisições com credenciais reais.
+O assistente coleta novos segredos apenas na memória do formulário, sem armazenamento persistente no navegador. Consumidores futuros devem mantê-los apenas durante a entrada/teste, sem persistir em localStorage, sessionStorage, URLs ou logs. Evite ferramentas que gravem histórico dos corpos das requisições com credenciais reais.
 
 ## Validação reproduzível isolada
 

@@ -1,3 +1,4 @@
+import { IntegrationAvailabilityService } from '../core/integration-availability.service';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
@@ -18,6 +19,7 @@ import { isDesktopApp } from '../core/api-url';
   imports: [RouterLink],
   styleUrl: './series-details.page.scss',
   template: `
+    @if (!availability.ready('prowlarr') || !availability.ready('qbittorrent')) { <p class="page" role="status">{{ availability.state() === 'loading' ? 'Conferindo as integrações…' : availability.state() === 'error' ? 'Não foi possível conferir busca e downloads.' : 'Busca, motor ou pasta dos downloads precisam de configuração. O catálogo continua disponível.' }} <a routerLink="/setup">Configurar recursos</a></p> }
     @if (details(); as data) {
       <section class="details-hero" aria-labelledby="series-title">
         @if (data.series.backdropPath) { <img [src]="backdropUrl(data.series.backdropPath)" [alt]="'Cena de ' + data.series.name" fetchpriority="high" decoding="async" /> }
@@ -47,12 +49,12 @@ import { isDesktopApp } from '../core/api-url';
             <div class="season-navigator"><div class="season-tabs" #seasonTabs (scroll)="syncSeasonSlider(seasonTabs)">@for (season of data.seasons; track season.tmdbId) { <button type="button" [class.active]="selectedSeason()?.seasonNumber === season.seasonNumber" (click)="selectSeason(data.series.tmdbId, season, $event)">T{{ season.seasonNumber }}</button> }</div>@if (data.seasons.length > 8) { <input class="season-slider" type="range" min="0" max="100" [value]="seasonSliderValue()" aria-label="Navegar pelas temporadas" (input)="moveSeasonSlider(seasonTabs, $event)" /> }</div>
             @if (selectedSeason(); as season) {
               <div class="season-copy"><strong>{{ season.name }}</strong><span>{{ season.episodeCount }} episódios</span></div>
-              <button class="btn btn-primary season-download" type="button" (click)="openReleases(data, season)"><i class="ph ph-download-simple"></i>Opções de download</button>
+              <button class="btn btn-primary season-download" type="button" [disabled]="!availability.ready('prowlarr')" (click)="openReleases(data, season)"><i class="ph ph-download-simple"></i>Opções de download</button>
             }
             @if (seasonDetails(); as current) {
               <div class="episode-list">@for (episode of current.episodes; track episode.tmdbId) {
                 <article>@if (episode.stillPath) { <img [src]="stillUrl(episode)" [alt]="episode.name" loading="lazy" decoding="async" /> } @else { <span><i class="ph ph-play-circle"></i></span> }
-                  <div><p>E{{ padded(episode.episodeNumber) }} · {{ year(episode.airDate) }}</p><h3>{{ episode.name }}</h3>@if (episode.overview) { <small>{{ episode.overview }}</small> }<button class="episode-download" type="button" (click)="openEpisodeReleases(data, selectedSeason()!, episode)"><i class="ph ph-download-simple"></i>Opções de download</button></div>
+                  <div><p>E{{ padded(episode.episodeNumber) }} · {{ year(episode.airDate) }}</p><h3>{{ episode.name }}</h3>@if (episode.overview) { <small>{{ episode.overview }}</small> }<button class="episode-download" type="button" [disabled]="!availability.ready('prowlarr')" (click)="openEpisodeReleases(data, selectedSeason()!, episode)"><i class="ph ph-download-simple"></i>Opções de download</button></div>
                 </article>
               }</div>
             }
@@ -68,7 +70,7 @@ import { isDesktopApp } from '../core/api-url';
             @if (releaseState() === 'loading') { <div class="release-state"><i class="ph ph-spinner-gap"></i>Procurando opções para download.</div> }
             @else if (releaseState() === 'error') { <div class="release-state error">Não foi possível encontrar opções agora. Tente novamente.</div> }
             @else if (!releases().length) { <div class="release-state">Nenhuma opção encontrada para {{ selectedEpisode() ? 'este episódio' : 'esta temporada' }}.</div> }
-            @else { <div class="release-list">@for (release of releases(); track releaseKey(release)) { <article><div><strong>{{ release.title }}</strong><p>{{ release.indexer || 'Fonte' }} · {{ release.seeders ?? 0 }} pessoas compartilhando · {{ size(release.size) }}</p></div><div class="release-actions"><button class="btn btn-primary" type="button" [disabled]="!acquisitionRef(release) || submittingRelease() === acquisitionRef(release)" (click)="enqueue(data, selectedSeason()!, selectedEpisode(), release)">@if (submittingRelease() === acquisitionRef(release)) { Preparando… } @else { Baixar }</button></div></article> }</div> }
+            @else { <div class="release-list">@for (release of releases(); track releaseKey(release)) { <article><div><strong>{{ release.title }}</strong><p>{{ release.indexer || 'Fonte' }} · {{ release.seeders ?? 0 }} pessoas compartilhando · {{ size(release.size) }}</p></div><div class="release-actions"><button class="btn btn-primary" type="button" [disabled]="!availability.ready('qbittorrent') || !acquisitionRef(release) || submittingRelease() === acquisitionRef(release)" (click)="enqueue(data, selectedSeason()!, selectedEpisode(), release)">@if (submittingRelease() === acquisitionRef(release)) { Preparando… } @else { Baixar }</button></div></article> }</div> }
           </section>
         </div>
       }
@@ -98,7 +100,10 @@ export class SeriesDetailsPage {
   readonly submittingRelease = signal<string | null>(null);
   readonly submissionMessage = signal<string | null>(null);
 
+  readonly availability = inject(IntegrationAvailabilityService);
+
   constructor() {
+    this.availability.refresh();
     this.route.paramMap.pipe(switchMap(params => this.api.seriesDetails(Number(params.get('tmdbId'))).pipe(catchError(() => of(null)))), takeUntilDestroyed(this.destroyRef)).subscribe(data => {
       this.details.set(data); this.libraryAction.set('idle'); this.closeReleases();
       if (data) this.libraryApi.isSeriesPlanned(data.series.tmdbId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(value => this.libraryAction.set(value.planned ? 'added' : 'idle'));

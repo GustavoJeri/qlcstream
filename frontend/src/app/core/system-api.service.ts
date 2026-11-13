@@ -52,6 +52,12 @@ export interface IntegrationCandidateResult {
 @Injectable({ providedIn: 'root' })
 export class SystemApiService {
   private readonly http = inject(HttpClient);
+  integrationKey(): Observable<{ ready: boolean }> {
+    return this.http.get<{ ready: boolean }>(apiUrl('/api/system/integration-settings/key'));
+  }
+  provisionIntegrationKey(): Observable<{ ready: boolean }> {
+    return this.http.post<{ ready: boolean }>(apiUrl('/api/system/integration-settings/key'), {});
+  }
   integrationSettings(): Observable<IntegrationSettingsState[]> {
     return this.http.get<IntegrationSettingsState[]>(apiUrl('/api/system/integration-settings'));
   }

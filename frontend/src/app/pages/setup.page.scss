@@ -1,0 +1,12 @@
+.setup { max-width: 880px; margin: auto; padding-block: 2rem; }
+header, section, footer { margin-bottom: 1.5rem; }
+section { border: 1px solid var(--border, #666); border-radius: 16px; padding: 1.5rem; }
+nav, .actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-block: 1rem; }
+nav [aria-current] { outline: 2px solid var(--accent, #8a8aff); }
+label { display: grid; gap: .5rem; margin-block: 1rem; }
+input:not([type=checkbox]) { width: 100%; padding: .8rem; border: 1px solid #777; border-radius: 8px; background: transparent; color: inherit; }
+.confirmation { display: flex; align-items: flex-start; gap: .7rem; }
+p { line-height: 1.65; }
+a:not(.btn) { color: inherit; text-decoration: underline; }
+button:disabled { opacity: .5; }
+footer .btn { margin-right: .6rem; }

@@ -1,4 +1,8 @@
-# Primeira execução — fluxo manual atual
+# Primeira execução
+
+Para uma instalação nova pelo Compose, inicie os serviços e abra **Configurar**. O [assistente por etapas](assistente-primeira-configuracao.md) permite criar a proteção no servidor, testar e salvar as integrações sem editar credenciais em arquivos. Configurações existentes por ambiente são preservadas. O guia manual abaixo continua disponível para instalações administradas por ambiente.
+
+## Configuração manual por ambiente
 
 O assistente de configuração ainda está no [plano de evolução](roadmap.md). Hoje é necessário configurar três integrações: TMDB para o catálogo, Prowlarr para busca de fontes e qBittorrent para downloads.
 
@@ -59,7 +63,7 @@ docker compose up -d --no-deps --force-recreate backend
 
 Abrir o aplicativo e conferir catálogo, busca de fontes e um download de conteúdo que possa ser usado para teste.
 
-A tela atual testa autenticação e conectividade. Como alternativa às credenciais por ambiente, a API oferece [configuração persistente sem recriar o backend](configuracao-integracoes.md). O assistente visual permanece na Issue #18.
+A tela atual testa autenticação e conectividade. Como alternativa às credenciais por ambiente, a API oferece [configuração persistente sem recriar o backend](configuracao-integracoes.md). O [assistente visual](assistente-primeira-configuracao.md) oferece a alternativa por etapas.
 
 ## Arquivos e uso diário
 
