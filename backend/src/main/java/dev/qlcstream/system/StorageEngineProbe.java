@@ -17,6 +17,11 @@ import tools.jackson.databind.ObjectMapper;
 
 @Component
 class StorageEngineProbe {
+    private IntegrationSettings settings;
+    @org.springframework.beans.factory.annotation.Autowired
+    StorageEngineProbe(QbittorrentProperties properties, ObjectMapper mapper, IntegrationSettings settings) {
+        this(properties, mapper); this.settings = settings;
+    }
     private final QbittorrentProperties properties;
     private final ObjectMapper mapper;
 
@@ -26,6 +31,8 @@ class StorageEngineProbe {
     }
 
     String mapping() {
+        if (settings != null) { var c = settings.effective("qbittorrent");
+            return new StorageEngineProbe(new QbittorrentProperties(c.baseUrl(), c.username(), c.secret()), mapper).mapping(); }
         if (!properties.configured()) return "engine_not_configured";
         try {
             var base = URI.create(properties.baseUrl());
@@ -65,7 +72,7 @@ class StorageEngineProbe {
     }
 
     private HttpResponse<String> request(HttpClient client, String path, String form, long deadline) throws Exception {
-        var builder = HttpRequest.newBuilder(URI.create(properties.baseUrl().replaceAll("/+$", "") + path))
+        var builder = HttpRequest.newBuilder(IntegrationEndpoint.api(properties.baseUrl(), path))
                 .timeout(Duration.ofSeconds(5));
         if (form == null) builder.GET();
         else builder.header("Content-Type", "application/x-www-form-urlencoded").POST(HttpRequest.BodyPublishers.ofString(form));

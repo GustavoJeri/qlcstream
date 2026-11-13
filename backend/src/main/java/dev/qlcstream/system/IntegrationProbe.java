@@ -2,7 +2,6 @@ package dev.qlcstream.system;
 
 import java.net.CookieManager;
 import java.net.CookiePolicy;
-import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -22,7 +21,18 @@ import dev.qlcstream.system.config.TmdbConfigurationProperties;
 
 /** Isolated from download clients: only authentication and metadata reads are allowed here. */
 @Component
-class IntegrationProbe {
+class IntegrationProbe implements AutoCloseable {
+    private IntegrationSettings settings;
+    Object revision(String id) { return settings == null ? this : settings.effective(id); }
+    private IntegrationProbe snapshot(String id) {
+        var c = settings.effective(id);
+        return new IntegrationProbe(new TmdbConfigurationProperties(c.baseUrl(), c.secret()),
+            new ProwlarrProperties(c.baseUrl(), c.secret()), new QbittorrentProperties(c.baseUrl(), c.username(), c.secret()), json);
+    }
+    @org.springframework.beans.factory.annotation.Autowired
+    IntegrationProbe(TmdbConfigurationProperties t, ProwlarrProperties p, QbittorrentProperties q, ObjectMapper j, IntegrationSettings settings) {
+        this(t,p,q,j); this.settings = settings;
+    }
     static final Duration TOTAL_TIMEOUT = Duration.ofSeconds(5);
     private final TmdbConfigurationProperties tmdb;
     private final ProwlarrProperties prowlarr;
@@ -41,6 +51,7 @@ class IntegrationProbe {
     }
 
     boolean configured(String id) {
+        if (settings != null) return settings.effective(id).configured(id);
         return switch (id) {
             case "tmdb" -> tmdb.configured();
             case "prowlarr" -> prowlarr.configured();
@@ -50,6 +61,7 @@ class IntegrationProbe {
     }
 
     String check(String id) {
+        if (settings != null) { try (var probe = snapshot(id)) { return probe.check(id); } }
         long deadline = System.nanoTime() + TOTAL_TIMEOUT.toNanos();
         try {
             switch (id) {
@@ -105,12 +117,7 @@ class IntegrationProbe {
     }
 
     private static HttpRequest.Builder request(String baseUrl, String path) {
-        var uri = URI.create(baseUrl == null ? "" : baseUrl);
-        if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
-                || uri.getHost() == null || uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null) {
-            throw new IllegalArgumentException();
-        }
-        return HttpRequest.newBuilder(URI.create(baseUrl.replaceAll("/+$", "") + path)).timeout(Duration.ofSeconds(2));
+        return HttpRequest.newBuilder(IntegrationEndpoint.api(baseUrl, path)).timeout(Duration.ofSeconds(2));
     }
 
     private static HttpResponse<String> send(HttpClient client, HttpRequest request, long deadline)
@@ -127,6 +134,8 @@ class IntegrationProbe {
         if (response.statusCode() == 401 || response.statusCode() == 403) return "authentication_rejected";
         return response.statusCode() == 200 || response.statusCode() == 204 ? null : "http_error";
     }
+
+    @Override public void close() { client.close(); qbClient.close(); }
 
     private static String encode(String value) { return URLEncoder.encode(value, StandardCharsets.UTF_8); }
 }

@@ -59,7 +59,7 @@ docker compose up -d --no-deps --force-recreate backend
 
 Abrir o aplicativo e conferir catálogo, busca de fontes e um download de conteúdo que possa ser usado para teste.
 
-A tela atual de configurações informa se os campos das integrações estão preenchidos; ainda não é um teste completo de conectividade. O incremento F01 corrige essa limitação.
+A tela atual testa autenticação e conectividade. Como alternativa às credenciais por ambiente, a API oferece [configuração persistente sem recriar o backend](configuracao-integracoes.md). O assistente visual permanece na Issue #18.
 
 ## Arquivos e uso diário
 

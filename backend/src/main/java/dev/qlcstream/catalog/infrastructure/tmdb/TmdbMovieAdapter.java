@@ -26,9 +26,16 @@ import dev.qlcstream.catalog.domain.SeriesSeason;
 
 @Component
 public class TmdbMovieAdapter implements MovieMetadataProvider {
+    private dev.qlcstream.system.IntegrationSettings settings;
 
     private final RestClient client;
     private final TmdbProperties properties;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public TmdbMovieAdapter(TmdbProperties properties, dev.qlcstream.system.IntegrationSettings settings) {
+        this(properties);
+        this.settings = settings;
+    }
 
     public TmdbMovieAdapter(TmdbProperties properties) {
         this.properties = properties;
@@ -37,6 +44,7 @@ public class TmdbMovieAdapter implements MovieMetadataProvider {
 
     @Override
     public List<Movie> trending(String language, int page) {
+        if (settings != null) { var c = settings.effective("tmdb"); return new TmdbMovieAdapter(new TmdbProperties(c.baseUrl(), c.secret())).trending(language, page); }
         requireConfiguration();
         var response = client.get()
                 .uri(uri -> uri.path("/trending/movie/week")
@@ -51,6 +59,7 @@ public class TmdbMovieAdapter implements MovieMetadataProvider {
 
     @Override
     public List<Movie> discover(CatalogCollection collection, String language, int page) {
+        if (settings != null) { var c = settings.effective("tmdb"); return new TmdbMovieAdapter(new TmdbProperties(c.baseUrl(), c.secret())).discover(collection, language, page); }
         requireConfiguration();
         var request = client.get()
                 .uri(uri -> {
@@ -84,6 +93,7 @@ public class TmdbMovieAdapter implements MovieMetadataProvider {
 
     @Override
     public List<Movie> search(String query, String language, int page) {
+        if (settings != null) { var c = settings.effective("tmdb"); return new TmdbMovieAdapter(new TmdbProperties(c.baseUrl(), c.secret())).search(query, language, page); }
         requireConfiguration();
         var response = client.get()
                 .uri(uri -> uri.path("/search/movie")
@@ -100,6 +110,7 @@ public class TmdbMovieAdapter implements MovieMetadataProvider {
 
     @Override
     public MovieDetails details(long tmdbId, String language) {
+        if (settings != null) { var c = settings.effective("tmdb"); return new TmdbMovieAdapter(new TmdbProperties(c.baseUrl(), c.secret())).details(tmdbId, language); }
         requireConfiguration();
         var response = client.get()
             .uri(uri -> uri.path("/movie/{tmdbId}")
@@ -117,6 +128,7 @@ public class TmdbMovieAdapter implements MovieMetadataProvider {
 
     @Override
     public List<Person> searchPeople(String query, String language) {
+        if (settings != null) { var c = settings.effective("tmdb"); return new TmdbMovieAdapter(new TmdbProperties(c.baseUrl(), c.secret())).searchPeople(query, language); }
         requireConfiguration();
         var response = client.get().uri(uri -> uri.path("/search/person").queryParam("query", query)
                 .queryParam("language", language).queryParam("include_adult", false).build())
@@ -126,6 +138,7 @@ public class TmdbMovieAdapter implements MovieMetadataProvider {
 
     @Override
     public PersonDetails personDetails(long tmdbId, String language) {
+        if (settings != null) { var c = settings.effective("tmdb"); return new TmdbMovieAdapter(new TmdbProperties(c.baseUrl(), c.secret())).personDetails(tmdbId, language); }
         requireConfiguration();
         var response = client.get().uri(uri -> uri.path("/person/{tmdbId}").queryParam("language", language)
                 .queryParam("append_to_response", "movie_credits").build(tmdbId))
@@ -136,6 +149,7 @@ public class TmdbMovieAdapter implements MovieMetadataProvider {
 
     @Override
     public List<Series> trendingSeries(String language, int page) {
+        if (settings != null) { var c = settings.effective("tmdb"); return new TmdbMovieAdapter(new TmdbProperties(c.baseUrl(), c.secret())).trendingSeries(language, page); }
         requireConfiguration();
         var response = client.get().uri(uri -> uri.path("/trending/tv/week").queryParam("language", language)
                 .queryParam("page", page).build()).header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.apiToken())
@@ -145,6 +159,7 @@ public class TmdbMovieAdapter implements MovieMetadataProvider {
 
     @Override
     public List<Series> searchSeries(String query, String language, int page) {
+        if (settings != null) { var c = settings.effective("tmdb"); return new TmdbMovieAdapter(new TmdbProperties(c.baseUrl(), c.secret())).searchSeries(query, language, page); }
         requireConfiguration();
         var response = client.get().uri(uri -> uri.path("/search/tv").queryParam("query", query)
                 .queryParam("language", language).queryParam("page", page).queryParam("include_adult", false).build())
@@ -154,6 +169,7 @@ public class TmdbMovieAdapter implements MovieMetadataProvider {
 
     @Override
     public SeriesDetails seriesDetails(long tmdbId, String language) {
+        if (settings != null) { var c = settings.effective("tmdb"); return new TmdbMovieAdapter(new TmdbProperties(c.baseUrl(), c.secret())).seriesDetails(tmdbId, language); }
         requireConfiguration();
         var response = client.get().uri(uri -> uri.path("/tv/{tmdbId}").queryParam("language", language)
                 .queryParam("append_to_response", "credits,videos").build(tmdbId))
@@ -164,6 +180,7 @@ public class TmdbMovieAdapter implements MovieMetadataProvider {
 
     @Override
     public SeasonDetails seasonDetails(long seriesTmdbId, int seasonNumber, String language) {
+        if (settings != null) { var c = settings.effective("tmdb"); return new TmdbMovieAdapter(new TmdbProperties(c.baseUrl(), c.secret())).seasonDetails(seriesTmdbId, seasonNumber, language); }
         requireConfiguration();
         var response = client.get().uri(uri -> uri.path("/tv/{seriesTmdbId}/season/{seasonNumber}")
                 .queryParam("language", language).build(seriesTmdbId, seasonNumber))
