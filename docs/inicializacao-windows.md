@@ -16,6 +16,8 @@ O `.env`, configurações de serviços, banco, chave e mídia existentes não s�
 
 **Atualizações são administrativas:** código, Dockerfiles ou `.env` alterados não provocam rebuild/recriação automática de contêineres existentes. Revise e faça backup antes de aplicar mudanças deliberadamente. Para compilar uma atualização revisada: `docker compose build backend frontend`; para aplicá-la: `docker compose up -d`. Para aplicar variáveis novas somente ao backend: `docker compose up -d --no-deps --force-recreate backend`. Esses comandos podem recriar serviços; não fazem parte da inicialização diária. Não use `down -v` para recuperar uma falha.
 
+As imagens externas do Compose estão fixadas por digest. O inicializador pode preservar um contêiner criado com outra referência; use a [conferência de versão e identidade](versoes-integracoes.md#conferir-execução-e-divergência) antes de uma atualização administrativa. A matriz comprova recriação na mesma versão sobre cópia sintética; não promete desfazer migrações de dados.
+
 Para parar preservando os contêineres e volumes: `docker compose stop`, na raiz. O inicializador pode reabri-los depois.
 
 ## Falhas e recuperação

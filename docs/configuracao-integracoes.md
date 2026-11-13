@@ -1,5 +1,7 @@
 # Configuração persistente das integrações — Issue #17
 
+As versões verificadas e a conferência administrativa estão na [matriz das integrações](versoes-integracoes.md). Fixar imagens não muda a precedência, a adoção explícita ou a chave de proteção descritas neste documento.
+
 O backend permite preparar a configuração pela API. O [assistente visual da Issue #18](assistente-primeira-configuracao.md) usa estes contratos. Esta API é administrativa e local, como o restante da instalação atual: mantenha as portas do Compose vinculadas a loopback; não a publique na internet. Não há autenticação administrativa nova nesta entrega.
 
 ## Precedência e atualização

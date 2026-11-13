@@ -73,4 +73,4 @@ Por padrão, os arquivos ficam em `data/media`, compartilhados como `/data` no b
 
 No Windows, use `iniciar-qlcstream.bat` para iniciar novamente, inclusive após reiniciar o computador e abrir Docker Desktop. Ele reutiliza imagens, contêineres e volumes. Use `docker compose stop` para parar. Na administração manual, `docker compose up -d` também pode aplicar alterações de configuração e recriar contêineres; confira o [guia do inicializador](inicializacao-windows.md). Cancelar um download no aplicativo mantém os arquivos já salvos.
 
-O projeto usa imagens `latest` para algumas integrações. Fixar versões verificadas e facilitar as atualizações faz parte do incremento F04; isso ainda não foi alterado nesta entrega.
+As integrações do Compose usam qBittorrent `5.3.0-2` e Prowlarr `2.7.0.5723-ls168`, com digests fixados. Consulte a [matriz, conferência da versão executada e promoção explícita](versoes-integracoes.md). O inicializador preserva contêineres existentes; atualizar o checkout não aplica automaticamente essas referências à instalação diária.

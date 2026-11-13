@@ -1,5 +1,7 @@
 # Diagnóstico de armazenamento — Issue #16
 
+As [imagens fixadas e a matriz de compatibilidade](versoes-integracoes.md) foram verificadas com o compartilhamento UID 100/grupo 1000 já entregue. Essa prova vale para as fixtures sintéticas; não amplia a conclusão do diagnóstico HTTP sobre volumes de outras instalações.
+
 Em **Configurações → Pasta dos downloads**, o botão **Diagnosticar pasta salva** verifica o destino persistido no servidor. A página também verifica ao abrir e depois de salvar outro destino. Alterar o texto sem salvar não altera o destino testado. Ações de salvar e testar não se sobrepõem na página. O resultado mostra horário e orienta repetir após mudanças nos volumes ou permissões.
 
 ## Contrato
