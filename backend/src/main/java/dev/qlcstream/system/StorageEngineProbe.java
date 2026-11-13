@@ -72,7 +72,7 @@ class StorageEngineProbe {
     }
 
     private HttpResponse<String> request(HttpClient client, String path, String form, long deadline) throws Exception {
-        var builder = HttpRequest.newBuilder(URI.create(properties.baseUrl().replaceAll("/+$", "") + path))
+        var builder = HttpRequest.newBuilder(IntegrationEndpoint.api(properties.baseUrl(), path))
                 .timeout(Duration.ofSeconds(5));
         if (form == null) builder.GET();
         else builder.header("Content-Type", "application/x-www-form-urlencoded").POST(HttpRequest.BodyPublishers.ofString(form));

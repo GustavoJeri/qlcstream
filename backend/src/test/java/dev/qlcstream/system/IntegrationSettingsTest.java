@@ -122,6 +122,78 @@ class IntegrationSettingsTest {
         assertThrows(IllegalStateException.class, () -> settings.update("tmdb", change(null, null)));
     }
 
+    @Test void changedKeyRejectsWritesWithoutMixingKeysAndRestoringItAllowsRecovery() throws Exception {
+        var settings = service();
+        settings.update("tmdb", change(null, null));
+        assertKeyChangeRejected(settings);
+        // Startup must pin the key used to decrypt existing rows as well.
+        assertKeyChangeRejected(service());
+    }
+
+    private void assertKeyChangeRejected(IntegrationSettings settings) throws Exception {
+        var previous = settings.effective("tmdb");
+        var previousRows = Map.copyOf(rows);
+        byte[] replacement = new byte[32];
+        replacement[0] = 1;
+        Files.writeString(temporary.resolve("key"), Base64.getEncoder().encodeToString(replacement));
+        assertThrows(IllegalStateException.class, () -> settings.update("prowlarr", change("http://127.0.0.1:19999", null)));
+        assertThrows(IllegalStateException.class, () -> settings.update("tmdb", change(null,
+                new IntegrationSettings.SecretChange("replace", "fictional_replacement"))));
+        assertEquals(previousRows, rows);
+        assertSame(previous, settings.effective("tmdb"));
+        Files.writeString(temporary.resolve("key"), Base64.getEncoder().encodeToString(new byte[32]));
+        settings.update("prowlarr", change("http://127.0.0.1:19999", null));
+        assertEquals(settings.effective("tmdb"), service().effective("tmdb"));
+        assertEquals(settings.effective("prowlarr"), service().effective("prowlarr"));
+    }
+
+    @Test void diagnosticStorageAndDownloadClientAgreeOnRootAndSubpathWithTrailingSlashes() throws Exception {
+        var paths = new java.util.concurrent.CopyOnWriteArrayList<String>();
+        var prefix = new java.util.concurrent.atomic.AtomicReference<>("");
+        var server = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", exchange -> {
+            String path = exchange.getRequestURI().getPath();
+            paths.add(path);
+            String apiPath = path.substring(Math.min(prefix.get().length(), path.length()));
+            String body = switch (apiPath) {
+                case "/api/v2/auth/login" -> "Ok.";
+                case "/api/v2/app/version" -> "v5.1.4";
+                case "/api/v2/app/preferences" -> "{\"save_path\":\"/downloads\"}";
+                case "/api/v2/torrents/info" -> "[]";
+                default -> "missing";
+            };
+            exchange.sendResponseHeaders(body.equals("missing") ? 404 : 200, body.length());
+            exchange.getResponseBody().write(body.getBytes());
+            exchange.close();
+        });
+        server.start();
+        try {
+            var settings = service();
+            var mapper = new ObjectMapper();
+            var engine = new dev.qlcstream.downloads.infrastructure.qbittorrent.QbittorrentClient(
+                    new dev.qlcstream.downloads.config.DownloadQbittorrentProperties("", "", ""), mapper, settings);
+            var storage = new StorageEngineProbe(new dev.qlcstream.system.config.QbittorrentProperties("", "", ""), mapper, settings);
+            try (var probe = new IntegrationProbe(new dev.qlcstream.system.config.TmdbConfigurationProperties("", ""),
+                    new dev.qlcstream.system.config.ProwlarrProperties("", ""),
+                    new dev.qlcstream.system.config.QbittorrentProperties("", "", ""), mapper, settings)) {
+                for (var subpath : new String[]{"", "/subpath"}) {
+                    prefix.set(subpath);
+                    for (var trailing : new String[]{"", "/", "///"}) {
+                        paths.clear();
+                        String url = "http://127.0.0.1:" + server.getAddress().getPort() + subpath + trailing;
+                        settings.update("qbittorrent", new IntegrationSettings.Change("application", url, "fictional_user",
+                                new IntegrationSettings.SecretChange("replace", "fictional_secret")));
+                        assertEquals("ok", probe.check("qbittorrent"));
+                        assertEquals("compatible_unproven", storage.mapping());
+                        assertTrue(engine.torrents().isEmpty());
+                        assertEquals(6, paths.size());
+                        assertTrue(paths.stream().allMatch(path -> path.startsWith(subpath + "/api/v2/") && !path.contains("//")));
+                    }
+                }
+            }
+        } finally { server.stop(0); }
+    }
+
     @Test void candidateEndpointAndLiveClientsUseNewSnapshotWithoutReconstruction() throws Exception {
         var server = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
         var received = new java.util.concurrent.CopyOnWriteArrayList<String>();

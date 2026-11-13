@@ -32,6 +32,10 @@ final class IntegrationSecretCipher {
         }
     }
 
+    boolean sameKey(IntegrationSecretCipher other) {
+        return java.security.MessageDigest.isEqual(key, other.key);
+    }
+
     String decrypt(String integration, String value) {
         try {
             var parts = value.split("\\.", -1);

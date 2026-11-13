@@ -2,7 +2,6 @@ package dev.qlcstream.system;
 
 import java.net.CookieManager;
 import java.net.CookiePolicy;
-import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -118,12 +117,7 @@ class IntegrationProbe implements AutoCloseable {
     }
 
     private static HttpRequest.Builder request(String baseUrl, String path) {
-        var uri = URI.create(baseUrl == null ? "" : baseUrl);
-        if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
-                || uri.getHost() == null || uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null) {
-            throw new IllegalArgumentException();
-        }
-        return HttpRequest.newBuilder(URI.create(baseUrl.replaceAll("/+$", "") + path)).timeout(Duration.ofSeconds(2));
+        return HttpRequest.newBuilder(IntegrationEndpoint.api(baseUrl, path)).timeout(Duration.ofSeconds(2));
     }
 
     private static HttpResponse<String> send(HttpClient client, HttpRequest request, long deadline)

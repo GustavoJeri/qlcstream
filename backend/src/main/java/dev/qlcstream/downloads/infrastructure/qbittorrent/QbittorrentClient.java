@@ -3,7 +3,6 @@ package dev.qlcstream.downloads.infrastructure.qbittorrent;
 import java.io.IOException;
 import java.net.CookieManager;
 import java.net.CookiePolicy;
-import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -43,7 +42,7 @@ public class QbittorrentClient {
         if (!properties.configured()) throw new QbittorrentUnavailableException("qBittorrent não está configurado.");
         try {
             var client = authenticatedClient();
-            var request = HttpRequest.newBuilder(URI.create(properties.baseUrl() + "/api/v2/torrents/info"))
+            var request = HttpRequest.newBuilder(dev.qlcstream.system.IntegrationEndpoint.api(properties.baseUrl(), "/api/v2/torrents/info"))
                     .timeout(Duration.ofSeconds(15)).GET().build();
             var response = client.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
@@ -169,7 +168,7 @@ public class QbittorrentClient {
                 .map(entry -> URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8) + "="
                         + URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8))
                 .collect(Collectors.joining("&"));
-        var request = HttpRequest.newBuilder(URI.create(properties.baseUrl() + path)).timeout(Duration.ofSeconds(15))
+        var request = HttpRequest.newBuilder(dev.qlcstream.system.IntegrationEndpoint.api(properties.baseUrl(), path)).timeout(Duration.ofSeconds(15))
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(encoded)).build();
         return client.send(request, HttpResponse.BodyHandlers.ofString());

@@ -21,6 +21,7 @@ public class IntegrationSettings {
     private final ObjectMapper json;
     private final Map<String, Configuration> environment;
     private final String keyFile;
+    private IntegrationSecretCipher activeCipher;
     private volatile Map<String, Configuration> managed;
 
     public IntegrationSettings(JdbcTemplate jdbc, TransactionTemplate transaction, ObjectMapper json, Environment env) {
@@ -113,8 +114,13 @@ public class IntegrationSettings {
         return result;
     }
 
-    private IntegrationSecretCipher cipher() {
-        try { return new IntegrationSecretCipher(Files.readString(Path.of(keyFile)).trim()); }
+    private synchronized IntegrationSecretCipher cipher() {
+        try {
+            var provided = new IntegrationSecretCipher(Files.readString(Path.of(keyFile)).trim());
+            if (activeCipher == null) activeCipher = provided;
+            if (!activeCipher.sameKey(provided)) throw new IllegalStateException();
+            return activeCipher;
+        }
         catch (Exception failure) { throw new IllegalStateException("Integration settings key unavailable or invalid."); }
     }
 
