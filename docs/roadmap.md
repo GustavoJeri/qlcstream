@@ -51,7 +51,7 @@ Aceite: iniciar uma instalação já configurada não exige editar arquivos ou r
 
 ## F04: atualizações previsíveis
 
-- [ ] Definir versões suportadas das integrações e substituir imagens flutuantes por versões testadas (implementação da Issue #20 em revisão; matriz real documentada).
+- [x] Definir versões suportadas das integrações e substituir imagens flutuantes por versões testadas (Issue #20 integrada em `develop` pela PR #35).
 - [ ] Executar testes e compilação automaticamente em cada alteração.
 - [ ] Validar instalação limpa e atualização com dados existentes.
 - [ ] Documentar cópia de segurança e recuperação antes de migrar dados.
@@ -74,4 +74,4 @@ Não publicar arquivos `.env`, credenciais, configurações pessoais dos serviç
 
 Contrato, limitações e validação com volumes próprios estão em [diagnóstico de armazenamento](diagnostico-armazenamento.md).
 
-A persistência das integrações da Issue #17 foi revisada e integrada em `develop` pela [PR #32](https://github.com/GustavoJeri/qlcstream/pull/32): [contrato, API e recuperação](configuracao-integracoes.md). O assistente da Issue #18 foi integrado pela PR #33: [fluxo, preservação e evidências](assistente-primeira-configuracao.md). O inicializador da Issue #19 foi integrado pela [PR #34](https://github.com/GustavoJeri/qlcstream/pull/34), com CI aprovado e Issue encerrada: [contrato, falhas e validação](inicializacao-windows.md). A Issue #20 continua o inventário `671246a` com [referências fixadas, matriz real e procedimento de promoção/recuperação](versoes-integracoes.md), em revisão antes de integrar. Publicação em `main` e atualização da instalação diária são etapas posteriores.
+A persistência das integrações da Issue #17 foi revisada e integrada em `develop` pela [PR #32](https://github.com/GustavoJeri/qlcstream/pull/32): [contrato, API e recuperação](configuracao-integracoes.md). O assistente da Issue #18 foi integrado pela PR #33: [fluxo, preservação e evidências](assistente-primeira-configuracao.md). O inicializador da Issue #19 foi integrado pela [PR #34](https://github.com/GustavoJeri/qlcstream/pull/34): [contrato, falhas e validação](inicializacao-windows.md). A Issue #20 foi integrada pela [PR #35](https://github.com/GustavoJeri/qlcstream/pull/35), em `aa18d2b`, após revisão e correção dos três achados: [referências, matriz e promoção/recuperação](versoes-integracoes.md). O próximo incremento é a Issue #21, com [inventário inicial de backup e restauração](backup-restauracao.md); o procedimento ainda precisa ser implementado e validado. Publicação em `main` e atualização da instalação diária são etapas posteriores.
