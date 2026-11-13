@@ -17,6 +17,7 @@ class IntegrationDiagnostics {
     private final IntegrationProbe probe;
     private final Clock clock;
     private final ExecutorService workers = Executors.newVirtualThreadPerTaskExecutor();
+    private final java.util.Map<String, Object> revisions = new java.util.HashMap<>();
     private final LinkedHashMap<String, Result> results = new LinkedHashMap<>();
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -33,6 +34,11 @@ class IntegrationDiagnostics {
     synchronized List<Result> snapshot(boolean refresh) {
         var now = clock.instant();
         for (var id : List.copyOf(results.keySet())) {
+            var revision = probe.revision(id);
+            if (revisions.get(id) != revision) {
+                revisions.put(id, revision);
+                results.put(id, new Result(id, probe.configured(id), "unknown", "unknown", null, null, null));
+            }
             var current = results.get(id);
             if (!current.configured()) {
                 results.put(id, new Result(id, false, "not_configured", "missing_configuration", null, null, null));
@@ -54,7 +60,7 @@ class IntegrationDiagnostics {
 
     private synchronized void complete(String id, Result checking, String reason) {
         // Only the current attempt may publish a result; polling never starts overlapping work.
-        if (results.get(id) != checking) return;
+        if (results.get(id) != checking || revisions.get(id) != probe.revision(id)) return;
         var now = clock.instant();
         var status = reason.equals("ok") ? "available"
                 : reason.equals("authentication_rejected") ? "authentication_rejected" : "unavailable";

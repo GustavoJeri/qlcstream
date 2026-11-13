@@ -73,3 +73,5 @@ Cada incremento deve ter um objetivo verificável, uma mudança pequena, testes 
 Não publicar arquivos `.env`, credenciais, configurações pessoais dos serviços, banco de dados ou mídia. Manter os créditos do projeto original. A escolha de uma licença para o projeto de origem cabe ao seu autor; este fork não acrescenta uma licença em nome dele.
 
 Contrato, limitações e validação com volumes próprios estão em [diagnóstico de armazenamento](diagnostico-armazenamento.md).
+
+A persistência das integrações da Issue #17 está implementada para revisão: [contrato, API e recuperação](configuracao-integracoes.md). O assistente visual da Issue #18 permanece pendente.

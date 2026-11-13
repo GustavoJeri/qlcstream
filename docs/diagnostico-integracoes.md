@@ -80,3 +80,7 @@ Invoke-RestMethod -Method Post http://127.0.0.1:18080/test/prowlarr/start
 ```
 
 Teste novamente após o intervalo mínimo e confira a recuperação das três conexões verificadas. Espere um minuto sem atualizar e confira “Desatualizado”. A prévia de conexões não oferece o endpoint de diagnóstico de armazenamento: essa seção pode informar que não foi possível diagnosticar e o resumo não deve anunciar “Tudo pronto”. Para validar a pasta, use a instalação isolada completa descrita no guia de armazenamento. Encerre a prévia com Ctrl+C; isso fecha somente os servidores de teste.
+
+## Configuração efetiva
+
+Desde a Issue #17, clientes e diagnósticos usam a mesma [configuração efetiva](configuracao-integracoes.md). Alterações invalidam o cache e impedem publicar resultados da configuração anterior. Testar um candidato não altera o diagnóstico efetivo.

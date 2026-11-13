@@ -54,3 +54,5 @@ cd frontend && npm install && npm start
 ```
 
 Para executar o backend fora do Docker, defina as variáveis de conexão descritas em `.env.example` e mantenha o PostgreSQL acessível.
+
+As integrações também podem ser configuradas pela API sem recriar o backend. Consulte [precedência, proteção dos segredos e recuperação](docs/configuracao-integracoes.md). O assistente visual continua previsto para a Issue #18.

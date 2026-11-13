@@ -24,16 +24,22 @@ import dev.qlcstream.downloads.config.DownloadQbittorrentProperties;
 
 @Component
 public class QbittorrentClient {
+    private dev.qlcstream.system.IntegrationSettings settings;
 
     private final DownloadQbittorrentProperties properties;
     private final ObjectMapper objectMapper;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    public QbittorrentClient(DownloadQbittorrentProperties properties, ObjectMapper objectMapper, dev.qlcstream.system.IntegrationSettings settings) {
+        this(properties, objectMapper); this.settings = settings;
+    }
     public QbittorrentClient(DownloadQbittorrentProperties properties, ObjectMapper objectMapper) {
         this.properties = properties;
         this.objectMapper = objectMapper;
     }
 
     public List<TorrentSnapshot> torrents() {
+        if (settings != null) { var c = settings.effective("qbittorrent"); return new QbittorrentClient(new DownloadQbittorrentProperties(c.baseUrl(), c.username(), c.secret()), objectMapper).torrents(); }
         if (!properties.configured()) throw new QbittorrentUnavailableException("qBittorrent não está configurado.");
         try {
             var client = authenticatedClient();
@@ -51,14 +57,18 @@ public class QbittorrentClient {
             }
             return snapshots;
         } catch (IOException exception) {
-            throw new QbittorrentUnavailableException("Não foi possível alcançar o qBittorrent.", exception);
+            throw new QbittorrentUnavailableException("Não foi possível alcançar o qBittorrent.");
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new QbittorrentUnavailableException("A comunicação com o qBittorrent foi interrompida.", exception);
+            throw new QbittorrentUnavailableException("A comunicação com o qBittorrent foi interrompida.");
+        } catch (RuntimeException failure) {
+            if (failure instanceof QbittorrentUnavailableException known) throw known;
+            throw new QbittorrentUnavailableException("Resposta inválida do qBittorrent.");
         }
     }
 
     public void remove(String hash) {
+        if (settings != null) { var c = settings.effective("qbittorrent"); new QbittorrentClient(new DownloadQbittorrentProperties(c.baseUrl(), c.username(), c.secret()), objectMapper).remove(hash); return; }
         if (hash == null || hash.isBlank()) return;
         if (!properties.configured()) throw new QbittorrentUnavailableException("qBittorrent não está configurado.");
         try {
@@ -67,17 +77,23 @@ public class QbittorrentClient {
                 throw new QbittorrentUnavailableException("Não foi possível remover o torrent do qBittorrent.");
             }
         } catch (IOException exception) {
-            throw new QbittorrentUnavailableException("Não foi possível alcançar o qBittorrent.", exception);
+            throw new QbittorrentUnavailableException("Não foi possível alcançar o qBittorrent.");
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new QbittorrentUnavailableException("A comunicação com o qBittorrent foi interrompida.", exception);
+            throw new QbittorrentUnavailableException("A comunicação com o qBittorrent foi interrompida.");
+        } catch (RuntimeException failure) {
+            if (failure instanceof QbittorrentUnavailableException known) throw known;
+            throw new QbittorrentUnavailableException("Resposta inválida do qBittorrent.");
         }
     }
 
-    public void pause(String hash) { command("/api/v2/torrents/stop", hash); }
-    public void resume(String hash) { command("/api/v2/torrents/start", hash); }
+    public void pause(String hash) {
+        if (settings != null) { var c = settings.effective("qbittorrent"); new QbittorrentClient(new DownloadQbittorrentProperties(c.baseUrl(), c.username(), c.secret()), objectMapper).pause(hash); return; } command("/api/v2/torrents/stop", hash); }
+    public void resume(String hash) {
+        if (settings != null) { var c = settings.effective("qbittorrent"); new QbittorrentClient(new DownloadQbittorrentProperties(c.baseUrl(), c.username(), c.secret()), objectMapper).resume(hash); return; } command("/api/v2/torrents/start", hash); }
 
-    public void recheck(String hash) { command("/api/v2/torrents/recheck", hash); }
+    public void recheck(String hash) {
+        if (settings != null) { var c = settings.effective("qbittorrent"); new QbittorrentClient(new DownloadQbittorrentProperties(c.baseUrl(), c.username(), c.secret()), objectMapper).recheck(hash); return; } command("/api/v2/torrents/recheck", hash); }
 
     private void command(String path, String hash) {
         if (hash == null || hash.isBlank()) throw new QbittorrentUnavailableException("O torrent não possui identificador.");
@@ -85,10 +101,13 @@ public class QbittorrentClient {
             var response = post(authenticatedClient(), path, Map.of("hashes", hash));
             if (response.statusCode() < 200 || response.statusCode() >= 300) throw new QbittorrentUnavailableException("O qBittorrent recusou a ação.");
         } catch (IOException exception) {
-            throw new QbittorrentUnavailableException("Não foi possível alcançar o qBittorrent.", exception);
+            throw new QbittorrentUnavailableException("Não foi possível alcançar o qBittorrent.");
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new QbittorrentUnavailableException("A comunicação com o qBittorrent foi interrompida.", exception);
+            throw new QbittorrentUnavailableException("A comunicação com o qBittorrent foi interrompida.");
+        } catch (RuntimeException failure) {
+            if (failure instanceof QbittorrentUnavailableException known) throw known;
+            throw new QbittorrentUnavailableException("Resposta inválida do qBittorrent.");
         }
     }
 
@@ -110,6 +129,7 @@ public class QbittorrentClient {
     }
 
     public void add(String acquisitionRef, String savePath) {
+        if (settings != null) { var c = settings.effective("qbittorrent"); new QbittorrentClient(new DownloadQbittorrentProperties(c.baseUrl(), c.username(), c.secret()), objectMapper).add(acquisitionRef, savePath); return; }
         if (!properties.configured()) {
             throw new QbittorrentUnavailableException("qBittorrent não está configurado.");
         }
@@ -120,10 +140,13 @@ public class QbittorrentClient {
                 throw new QbittorrentUnavailableException("O qBittorrent recusou esta fonte de download.");
             }
         } catch (IOException exception) {
-            throw new QbittorrentUnavailableException("Não foi possível alcançar o qBittorrent.", exception);
+            throw new QbittorrentUnavailableException("Não foi possível alcançar o qBittorrent.");
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new QbittorrentUnavailableException("A comunicação com o qBittorrent foi interrompida.", exception);
+            throw new QbittorrentUnavailableException("A comunicação com o qBittorrent foi interrompida.");
+        } catch (RuntimeException failure) {
+            if (failure instanceof QbittorrentUnavailableException known) throw known;
+            throw new QbittorrentUnavailableException("Resposta inválida do qBittorrent.");
         }
     }
 

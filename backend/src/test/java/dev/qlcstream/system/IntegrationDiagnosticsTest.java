@@ -216,6 +216,39 @@ class IntegrationDiagnosticsTest {
         } finally { release.countDown(); service.close(); }
     }
 
+    @Test void discardsOldAttemptAfterConfigurationChanges() throws Exception {
+        var revision = new java.util.concurrent.atomic.AtomicReference<>(new Object());
+        var started = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var finished = new CountDownLatch(1);
+        var first = new java.util.concurrent.atomic.AtomicBoolean(true);
+        var fake = new IntegrationProbe(new TmdbConfigurationProperties(url, "token"), new ProwlarrProperties(url, "key"),
+                new QbittorrentProperties(url, "user", "pass"), new ObjectMapper()) {
+            @Override Object revision(String id) { return revision.get(); }
+            @Override String check(String id) {
+                if (id.equals("tmdb") && first.getAndSet(false)) {
+                    started.countDown();
+                    try { release.await(2, TimeUnit.SECONDS); }
+                    catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+                    finished.countDown();
+                    return "authentication_rejected";
+                }
+                return "ok";
+            }
+        };
+        var diagnostics = new IntegrationDiagnostics(fake);
+        try {
+            diagnostics.snapshot(false);
+            assertTrue(started.await(1, TimeUnit.SECONDS));
+            revision.set(new Object());
+            diagnostics.snapshot(false);
+            await(() -> diagnostics.snapshot(false).stream().allMatch(item -> item.status().equals("available")));
+            release.countDown();
+            assertTrue(finished.await(1, TimeUnit.SECONDS));
+            assertTrue(diagnostics.snapshot(false).stream().allMatch(item -> item.status().equals("available")));
+        } finally { release.countDown(); diagnostics.close(); fake.close(); }
+    }
+
     private static void await(java.util.function.BooleanSupplier condition) throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
         while (!condition.getAsBoolean() && System.nanoTime() < deadline) Thread.sleep(10);
