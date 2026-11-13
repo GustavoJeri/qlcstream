@@ -16,6 +16,8 @@ A tela oferece **Criar chave de proteção** quando a chave não está disponív
 
 O Compose prepara a pasta protegida para o usuário do backend e permite a criação explícita da chave. Prepara também `incoming` somente quando ausente, sem alterar conteúdo, proprietário ou permissões de um destino já existente. A configuração de mídia anterior e seu volume são preservados. Preparar diretórios não cria a chave: é necessária a ação explícita na tela ou a provisão administrativa anterior.
 
+A pasta nova usa proprietário UID 100 e grupo compartilhado GID 1000, com modo 2770. O backend mantém seu usuário/grupo próprios e recebe o grupo suplementar 1000; o motor usa `qbtUser` 1000:1000 na imagem atual. O bit setgid mantém o grupo em novos arquivos e subpastas; as permissões desses arquivos também dependem do umask de quem os cria. Isso permite escrita de ambos no destino e leitura dos arquivos de mídia pelo backend, sem abrir a pasta para outros usuários. A pasta de segredos continua separada e privada. Instalações que personalizam a identidade do motor precisam alinhar o grupo compartilhado. Diretórios existentes, inclusive os que tenham permissões incompatíveis, não são corrigidos silenciosamente: devem ser revisados pelo administrador.
+
 Arquivo inválido existente não é substituído. Se uma chave já tiver sido usada pelo processo ou houver configurações gerenciadas, uma chave ausente não é regenerada. O bloqueio de mudança de chave da PR #32 permanece. Banco com configurações gerenciadas sem chave correspondente continua recusando a inicialização. Consulte [backup e recuperação](configuracao-integracoes.md). Fora do Compose, o administrador deve fornecer uma pasta protegida gravável ou provisionar a chave previamente.
 
 ## Pasta e limites
@@ -51,5 +53,11 @@ docker compose --env-file docs/validation/integrations.env -f docs/validation/se
 - Roteiro de API aprovado contra Spring Boot e PostgreSQL reais na fixture, incluindo reinício, candidato inválido, chave idempotente, catálogo independente e recuperação da pasta.
 - Edge na fixture limpa: conferidos criação explícita da chave, credencial recusada sem salvar, candidato válido, adoção, adiamento de busca/downloads, catálogo acessível, retomada após reinício, recuperação após indisponibilidade temporária do backend, etapas restantes, pasta inválida e recuperação, e revisão de configuração salva sem revelar segredos. O diagnóstico manteve o compartilhamento físico inconclusivo.
 - As APIs externas foram simuladas; contas pessoais e interoperabilidade com serviços externos reais não foram testadas. Nenhum download foi iniciado. Banco, serviços, configurações e mídia da instalação diária foram preservados.
+
+### Correção de permissões após revisão da PR #33
+
+Execute `python docs/validation/test-shared-access.py` na raiz. O roteiro usa o mesmo script de preparação do Compose principal, as imagens reais do backend e do qBittorrent e um projeto aleatório `qlcstream-access-test-*`, com volumes descartáveis e sem rede. Somente shells são executados: a API, o banco e o processo de torrents não são iniciados. Ao concluir, o roteiro remove apenas os volumes que acabou de criar.
+
+Resultado aprovado: backend UID 100, GID 101 e grupo suplementar 1000; motor UID/GID 1000:1000. Ambos criaram arquivos e diretórios sintéticos, leram os arquivos um do outro e percorreram subpastas. `incoming` nova foi conferida como 100:1000 e modo 2770. Uma segunda preparação preservou bytes, proprietário, grupo e modo de um destino existente e de uma chave sintética; um link existente e seu destino também foram preservados. Nenhuma mídia, configuração ou chave pessoal foi montada. Essa verificação cobre permissões de acesso; não inicia um download nem muda o resultado inconclusivo do diagnóstico de equivalência física.
 
 A entrega aguarda revisão em PR para `develop`. A Issue #18 permanece aberta até revisão e integração.

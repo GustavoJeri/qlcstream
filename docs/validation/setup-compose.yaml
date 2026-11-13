@@ -16,13 +16,14 @@ services:
     image: postgres:18.6-alpine
     user: root
     entrypoint: /bin/sh
-    command: [-c, 'mkdir -p /keys /media/incoming; chown 100:101 /keys /media/incoming; chmod 700 /keys; chmod 770 /media/incoming']
-    volumes: [keys:/keys, media:/media]
+    command: [/prepare-directories.sh]
+    volumes: [keys:/secrets, media:/media, ../../backend/docker/prepare-directories.sh:/prepare-directories.sh:ro]
   mock:
     image: python:3.13-alpine
     command: [python, /fixture/mock-integrations.py]
     volumes: [./mock-integrations.py:/fixture/mock-integrations.py:ro]
   backend:
+    group_add: ["1000"]
     build: ../../backend
     networks: [default, preview]
     environment:
