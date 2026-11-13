@@ -87,10 +87,12 @@ docker build -t qlcstream-backup-helper:1 scripts/backup
 Pare os escritores pelo Compose que pertence à instalação escolhida, mantendo apenas o banco ativo. Por exemplo, no Compose padrão:
 
 ```powershell
-docker compose stop frontend backend prowlarr qbittorrent
+docker compose stop --timeout 1800 frontend backend prowlarr qbittorrent
 python scripts/qlc-backup.py backup --project qlc-stream --vault qlcbackup-20261113-config --key-vault qlcbackup-20261113-chave
 python scripts/qlc-backup.py verify --vault qlcbackup-20261113-config --key-vault qlcbackup-20261113-chave
 ```
+
+O exemplo concede até 30 minutos para o encerramento, respeitando a janela já prevista para o qBittorrent. Aguarde a parada normal; um encerramento forçado será recusado pelo backup. A fixture pequena usa 60 segundos apenas para seus serviços sintéticos.
 
 Use nomes novos em cada execução. Para incluir mídia, acrescente `--include-media` ao comando `backup`. A origem fica no mesmo estado: banco ativo, demais serviços parados; o operador pode retomá-los explicitamente com `docker compose start frontend backend prowlarr qbittorrent`. O backup não troca chave nem regrava os perfis. Instalações somente por ambiente devem provisionar conscientemente uma chave antes deste procedimento; o formato 1 exige chave original presente, mesmo sem registros gerenciados.
 
