@@ -28,24 +28,24 @@ Entregar:
 
 Aceite: endereço incorreto, senha inválida e serviço desligado produzem diagnósticos diferentes; a tela só declara um serviço pronto depois de uma consulta bem-sucedida.
 
-## F02: assistente de primeira configuração
+## Entregue — F02: assistente de primeira configuração
 
-- [ ] Detectar primeiro acesso e oferecer configuração por etapas.
-- [ ] Reaproveitar a instalação existente, sem sobrescrever configurações.
-- [ ] Configurar e validar catálogo, busca, motor e pasta pela interface.
-- [ ] Explicar a obtenção das credenciais e permitir testar cada conexão antes de continuar.
-- [ ] Guardar credenciais no servidor e retornar somente seu estado à interface.
-- [ ] Permitir catálogo sem exigir que todas as integrações estejam prontas.
+- [x] Detectar primeiro acesso e oferecer configuração por etapas.
+- [x] Reaproveitar a instalação existente, sem sobrescrever configurações.
+- [x] Configurar e validar catálogo, busca, motor e pasta pela interface.
+- [x] Explicar a obtenção das credenciais e permitir testar cada conexão antes de continuar.
+- [x] Guardar credenciais no servidor e retornar somente seu estado à interface.
+- [x] Permitir catálogo sem exigir que todas as integrações estejam prontas.
 
 Aceite: uma pessoa configura uma instalação limpa seguindo apenas as orientações da tela, sem editar arquivos do projeto. A seleção de fontes de busca continua sendo uma decisão explícita do usuário.
 
-## F03: inicialização mais simples no Windows
+## Entregue — F03: inicialização mais simples no Windows
 
-- [ ] Um ponto de entrada para verificar requisitos e iniciar o aplicativo.
-- [ ] Detectar Docker indisponível, portas ocupadas e falhas de inicialização.
-- [ ] Criar a configuração inicial somente quando ela não existir.
-- [ ] Mostrar o progresso e abrir o aplicativo quando estiver saudável.
-- [ ] Oferecer instruções recuperáveis quando uma etapa falhar.
+- [x] Um ponto de entrada para verificar requisitos e iniciar o aplicativo.
+- [x] Detectar Docker indisponível, portas ocupadas e falhas de inicialização.
+- [x] Criar a configuração inicial somente quando ela não existir.
+- [x] Mostrar o progresso e abrir o aplicativo quando estiver saudável.
+- [x] Oferecer instruções recuperáveis quando uma etapa falhar.
 
 Aceite: iniciar uma instalação já configurada não exige editar arquivos ou reconstruir imagens sem necessidade.
 
@@ -74,4 +74,4 @@ Não publicar arquivos `.env`, credenciais, configurações pessoais dos serviç
 
 Contrato, limitações e validação com volumes próprios estão em [diagnóstico de armazenamento](diagnostico-armazenamento.md).
 
-A persistência das integrações da Issue #17 foi revisada e integrada em `develop` pela [PR #32](https://github.com/GustavoJeri/qlcstream/pull/32): [contrato, API e recuperação](configuracao-integracoes.md). O assistente da Issue #18 foi integrado pela PR #33: [fluxo, preservação e evidências](assistente-primeira-configuracao.md). O inicializador da Issue #19 está implementado para revisão: [contrato, falhas e validação](inicializacao-windows.md). Publicação em `main` e atualização da instalação diária são etapas posteriores.
+A persistência das integrações da Issue #17 foi revisada e integrada em `develop` pela [PR #32](https://github.com/GustavoJeri/qlcstream/pull/32): [contrato, API e recuperação](configuracao-integracoes.md). O assistente da Issue #18 foi integrado pela PR #33: [fluxo, preservação e evidências](assistente-primeira-configuracao.md). O inicializador da Issue #19 foi integrado pela [PR #34](https://github.com/GustavoJeri/qlcstream/pull/34), com CI aprovado e Issue encerrada: [contrato, falhas e validação](inicializacao-windows.md). A investigação da Issue #20 começou pelo [inventário de versões e contratos](versoes-integracoes.md); a matriz de versões suportadas ainda está pendente. Publicação em `main` e atualização da instalação diária são etapas posteriores.
