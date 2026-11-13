@@ -19,5 +19,7 @@ public record DownloadSummary(
         long downloadedBytes,
         long downloadSpeedBps,
         Long etaSeconds,
-        Instant createdAt) {
+        Instant createdAt,
+        String engineState,
+        boolean canRetry) {
 }

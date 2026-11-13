@@ -24,6 +24,8 @@ import dev.qlcstream.downloads.application.DownloadSubmissionService;
 import dev.qlcstream.downloads.application.DownloadControlService;
 import dev.qlcstream.downloads.application.port.in.BrowseDownloadsUseCase;
 import dev.qlcstream.downloads.domain.DownloadSummary;
+import dev.qlcstream.downloads.infrastructure.qbittorrent.QbittorrentDownloadSynchronizer;
+import dev.qlcstream.downloads.infrastructure.qbittorrent.QbittorrentDownloadSynchronizer.SyncStatus;
 
 @RestController
 @RequestMapping("/api/downloads")
@@ -33,19 +35,29 @@ public class DownloadsController {
     private final DownloadSubmissionService submissions;
     private final DownloadControlService controls;
     private final DownloadUpdatePublisher updates;
+    private final QbittorrentDownloadSynchronizer synchronizer;
 
     public DownloadsController(BrowseDownloadsUseCase browseDownloads, DownloadSubmissionService submissions,
-            DownloadControlService controls, DownloadUpdatePublisher updates) {
+            DownloadControlService controls, DownloadUpdatePublisher updates, QbittorrentDownloadSynchronizer synchronizer) {
         this.browseDownloads = browseDownloads;
         this.submissions = submissions;
         this.controls = controls;
         this.updates = updates;
+        this.synchronizer = synchronizer;
     }
 
     @GetMapping
     List<DownloadResponse> active() {
         return browseDownloads.active().stream().map(DownloadResponse::from).toList();
     }
+
+    @GetMapping("/queue")
+    QueueResponse queue() {
+        var sync = synchronizer.syncStatus();
+        return new QueueResponse(active(), sync);
+    }
+
+    record QueueResponse(List<DownloadResponse> items, SyncStatus sync) { }
 
     @GetMapping(value = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     SseEmitter events() { return updates.subscribe(); }
@@ -84,12 +96,12 @@ public class DownloadsController {
 
     record DownloadResponse(UUID id, long movieTmdbId, String movieTitle, String posterPath, String mediaType, String releaseTitle,
             Integer resolutionHeight, String sourceType, String dynamicRange, String status, double progress,
-            Long totalBytes, long downloadedBytes, long downloadSpeedBps, Long etaSeconds, Instant createdAt) {
+            Long totalBytes, long downloadedBytes, long downloadSpeedBps, Long etaSeconds, Instant createdAt, String engineState, boolean canRetry) {
         static DownloadResponse from(DownloadSummary download) {
             return new DownloadResponse(download.id(), download.movieTmdbId(), download.movieTitle(), download.posterPath(), download.mediaType(),
                     download.releaseTitle(), download.resolutionHeight(), download.sourceType(), download.dynamicRange(),
                     download.status().name(), download.progress(), download.totalBytes(), download.downloadedBytes(),
-                    download.downloadSpeedBps(), download.etaSeconds(), download.createdAt());
+                    download.downloadSpeedBps(), download.etaSeconds(), download.createdAt(), download.engineState(), download.canRetry());
         }
     }
 }

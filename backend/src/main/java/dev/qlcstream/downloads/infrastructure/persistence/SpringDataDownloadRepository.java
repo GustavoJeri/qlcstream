@@ -46,7 +46,9 @@ public interface SpringDataDownloadRepository extends CrudRepository<DownloadRow
                    COALESCE(m.title, d.series_title) AS movie_title,
                    COALESCE(m.poster_path, d.series_poster_path) AS poster_path,
                    d.media_type, d.release_title, d.resolution_height, d.source_type, d.dynamic_range, d.status,
-                   d.progress, d.total_bytes, d.downloaded_bytes, d.download_speed_bps, d.eta_seconds, d.created_at
+                   d.progress, d.total_bytes, d.downloaded_bytes, d.download_speed_bps, d.eta_seconds, d.created_at, d.engine_state,
+                   (d.status = 'ERROR' AND NULLIF(TRIM(d.info_hash), '') IS NOT NULL
+                    AND d.engine_state IS DISTINCT FROM 'missing') AS can_retry
             FROM download d LEFT JOIN movie m ON m.id = d.movie_id
             WHERE d.status NOT IN ('COMPLETED', 'CANCELED', 'REMOVED')
             ORDER BY d.created_at DESC
@@ -70,5 +72,7 @@ public interface SpringDataDownloadRepository extends CrudRepository<DownloadRow
         long getDownloadSpeedBps();
         Long getEtaSeconds();
         Instant getCreatedAt();
+        String getEngineState();
+        boolean getCanRetry();
     }
 }

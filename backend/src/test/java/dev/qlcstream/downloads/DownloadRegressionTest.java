@@ -62,6 +62,34 @@ class DownloadRegressionTest {
                 });
     }
 
+    @Test void keepsLastConfirmedProgressWhenTheEngineDisconnectsAndRecovers() throws Exception {
+        try (var api = new ApiFixture()) {
+            var row = row();
+            api.infoBody = """
+                    [{"hash":"hash","state":"downloading","progress":0.2,"save_path":"/downloads/incoming/test"}]
+                    """;
+            var synchronizer = new QbittorrentDownloadSynchronizer(repository(row), api.client(), null,
+                    new DownloadUpdatePublisher());
+            synchronizer.synchronize();
+            var confirmed = synchronizer.syncStatus();
+            assertEquals("available", confirmed.state());
+            assertTrue(confirmed.queueingEnabled());
+
+            api.infoStatus = 503;
+            synchronizer.synchronize();
+            assertEquals("unavailable", synchronizer.syncStatus().state());
+            assertEquals(confirmed.lastSuccessfulAt(), synchronizer.syncStatus().lastSuccessfulAt());
+            assertEquals("DOWNLOADING", row.status());
+
+            api.infoStatus = 200;
+            api.infoBody = api.infoBody.replace("downloading", "missingFiles");
+            synchronizer.synchronize();
+            assertEquals("available", synchronizer.syncStatus().state());
+            assertTrue(synchronizer.syncStatus().queueingEnabled());
+            assertEquals("ERROR", row.status());
+        }
+    }
+
     @Test void cancelsOrphanWithoutRemovingAnotherTorrent() {
         var engine = new Engine(); var row = row();
         engine.snapshots = List.of(snapshot("downloading", .2, "/downloads/incoming/other"));
@@ -173,6 +201,7 @@ class DownloadRegressionTest {
         int loginStatus = 204, addStatus = 204;
         String loginBody = "", addBody = "", infoBody = "[]";
         boolean legacyCommands;
+        int infoStatus = 200;
 
         ApiFixture() throws Exception {
             server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -185,7 +214,8 @@ class DownloadRegressionTest {
                     status = loginStatus; result = loginBody;
                     exchange.getResponseHeaders().add("Set-Cookie", "SID=test; Path=/");
                 } else if (path.endsWith("/add")) { status = addStatus; result = addBody; }
-                else if (path.endsWith("/info")) result = infoBody;
+                else if (path.endsWith("/info")) { status = infoStatus; result = infoBody; }
+                else if (path.endsWith("/preferences")) result = "{\"queueing_enabled\":true}";
                 else if (legacyCommands && (path.endsWith("/stop") || path.endsWith("/start"))) status = 404;
                 byte[] bytes = result.getBytes(StandardCharsets.UTF_8);
                 exchange.sendResponseHeaders(status, status == 204 ? -1 : bytes.length);

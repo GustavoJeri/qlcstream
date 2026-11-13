@@ -26,3 +26,6 @@
 .retry-action{color:var(--accent)!important}.retry-action i{margin-right:5px}
 .action-error { padding: 14px 18px; border: 1px solid var(--danger); border-radius: var(--radius-md); color: var(--danger); }
 .download-actions button:disabled { opacity: .5; cursor: wait; }
+
+.queue-notice { padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius-md); color: var(--muted); }
+.queue-timestamp { color: var(--muted); font-size: 13px; margin: 0; }

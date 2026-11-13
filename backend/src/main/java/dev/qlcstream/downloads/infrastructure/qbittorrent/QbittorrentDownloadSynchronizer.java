@@ -1,5 +1,6 @@
 package dev.qlcstream.downloads.infrastructure.qbittorrent;
 
+import java.time.Instant;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -7,6 +8,8 @@ import java.util.stream.Collectors;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import dev.qlcstream.downloads.infrastructure.persistence.SpringDataDownloadRepository;
 import dev.qlcstream.library.LocalLibraryRegistrar;
@@ -21,6 +24,14 @@ public class QbittorrentDownloadSynchronizer {
     private final QbittorrentClient qbittorrent;
     private final LocalLibraryRegistrar library;
     private final DownloadUpdatePublisher updates;
+    private volatile SyncStatus syncStatus = new SyncStatus("waiting", null, false);
+    private Instant nextPreferencesCheck = Instant.EPOCH;
+
+    public record SyncStatus(String state, Instant lastSuccessfulAt, boolean queueingEnabled) { }
+
+    public SyncStatus syncStatus() {
+        return syncStatus;
+    }
 
     public QbittorrentDownloadSynchronizer(SpringDataDownloadRepository downloads, QbittorrentClient qbittorrent,
             LocalLibraryRegistrar library, DownloadUpdatePublisher updates) {
@@ -33,7 +44,22 @@ public class QbittorrentDownloadSynchronizer {
     @Scheduled(fixedDelayString = "${qlc-stream.qbittorrent.sync-delay:PT5S}")
     @Transactional
     public void synchronize() {
-        var torrents = qbittorrent.torrents();
+        var before = syncStatus;
+        java.util.List<QbittorrentClient.TorrentSnapshot> torrents;
+        try {
+            torrents = qbittorrent.torrents();
+        } catch (QbittorrentClient.QbittorrentUnavailableException exception) {
+            syncStatus = new SyncStatus("unavailable", before.lastSuccessfulAt(), false);
+            nextPreferencesCheck = Instant.EPOCH;
+            if (!before.state().equals("unavailable")) updates.publish();
+            return;
+        }
+        var now = Instant.now();
+        var queueingEnabled = before.queueingEnabled();
+        if (!now.isBefore(nextPreferencesCheck)) {
+            queueingEnabled = qbittorrent.queueingEnabled();
+            nextPreferencesCheck = now.plusSeconds(30);
+        }
         var torrentsByHash = torrents.stream()
                 .collect(Collectors.toMap(QbittorrentClient.TorrentSnapshot::hash, Function.identity(), (first, ignored) -> first));
         var torrentsByPath = torrents.stream()
@@ -63,14 +89,31 @@ public class QbittorrentDownloadSynchronizer {
                     // Retry on the next cycle; never delete a torrent based on this scan.
                 }
             } else if ((download.infoHash() != null && !download.infoHash().isBlank())
-                    || download.wasSubmittedBefore(java.time.Instant.now().minusSeconds(300))) {
+                    || download.wasSubmittedBefore(now.minusSeconds(300))) {
                 if (download.markMissingFromEngine()) {
                     changed = true;
                     updates.publishNotification("ERROR", "Download não encontrado", download.releaseTitle());
                 }
             }
         }
-        if (changed) updates.publish();
+        var confirmed = new SyncStatus("available", now, queueingEnabled);
+        boolean notify = changed || !before.state().equals(confirmed.state())
+                || before.queueingEnabled() != confirmed.queueingEnabled();
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    confirmSync(confirmed, notify);
+                }
+            });
+        } else {
+            confirmSync(confirmed, notify);
+        }
+    }
+
+    private void confirmSync(SyncStatus confirmed, boolean notify) {
+        syncStatus = confirmed;
+        if (notify) updates.publish();
     }
 
     private static String normalizePath(String path) {

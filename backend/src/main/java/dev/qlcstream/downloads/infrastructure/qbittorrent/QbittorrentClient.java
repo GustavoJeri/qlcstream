@@ -49,7 +49,9 @@ public class QbittorrentClient {
                 throw new QbittorrentUnavailableException("Não foi possível consultar o qBittorrent.");
             }
             var snapshots = new ArrayList<TorrentSnapshot>();
-            for (JsonNode torrent : objectMapper.readTree(response.body())) {
+            var body = objectMapper.readTree(response.body());
+            if (!body.isArray()) throw new QbittorrentUnavailableException("Resposta inválida do qBittorrent.");
+            for (JsonNode torrent : body) {
                 snapshots.add(new TorrentSnapshot(torrent.path("hash").asString(), torrent.path("state").asString(),
                         torrent.path("progress").asDouble(), torrent.path("size").asLong(), torrent.path("downloaded").asLong(),
                         torrent.path("dlspeed").asLong(), torrent.path("eta").asLong(), torrent.path("save_path").asString(), torrent.path("name").asString()));
@@ -63,6 +65,26 @@ public class QbittorrentClient {
         } catch (RuntimeException failure) {
             if (failure instanceof QbittorrentUnavailableException known) throw known;
             throw new QbittorrentUnavailableException("Resposta inválida do qBittorrent.");
+        }
+    }
+
+    public boolean queueingEnabled() {
+        if (settings != null) {
+            var effective = settings.effective("qbittorrent");
+            var configured = new DownloadQbittorrentProperties(effective.baseUrl(), effective.username(), effective.secret());
+            return new QbittorrentClient(configured, objectMapper).queueingEnabled();
+        }
+        try {
+            var client = authenticatedClient();
+            var request = HttpRequest.newBuilder(dev.qlcstream.system.IntegrationEndpoint.api(
+                    properties.baseUrl(), "/api/v2/app/preferences")).timeout(Duration.ofSeconds(5)).GET().build();
+            var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            return response.statusCode() == 200 && objectMapper.readTree(response.body()).path("queueing_enabled").asBoolean(false);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (IOException | RuntimeException exception) {
+            return false;
         }
     }
 

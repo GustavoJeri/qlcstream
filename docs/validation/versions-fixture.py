@@ -273,6 +273,11 @@ def test(clean):
     # Synchronization attaches the hash before commands are issued by the application.
     wait(lambda: any(row["id"] == identifier and row["status"] not in ("QUEUED", "SUBMITTING")
                      for row in b.call("/api/downloads")), "Java client synchronization")
+    queue = b.call("/api/downloads/queue")
+    assert queue["sync"]["state"] == "available" and queue["sync"]["lastSuccessfulAt"]
+    assert queue["sync"]["queueingEnabled"] == preferences["queueing_enabled"]
+    queued = next(row for row in queue["items"] if row["id"] == identifier)
+    assert queued["engineState"] and queued["canRetry"] is False
     b.raw("/api/downloads/" + identifier + "/PAUSE", "POST", {})
     wait(lambda: q.call("/api/v2/torrents/info")[0]["state"].startswith("stopped"), "Java pause")
     b.raw("/api/downloads/" + identifier + "/RESUME", "POST", {})

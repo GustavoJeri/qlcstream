@@ -23,6 +23,6 @@ public class JpaDownloadRepository implements DownloadRepository {
                 row.getId(), row.getMovieTmdbId(), row.getMovieTitle(), row.getPosterPath(), row.getMediaType(), row.getReleaseTitle(),
                 row.getResolutionHeight(), row.getSourceType(), row.getDynamicRange(), DownloadStatus.valueOf(row.getStatus()),
                 row.getProgress(), row.getTotalBytes(), row.getDownloadedBytes(), row.getDownloadSpeedBps(),
-                row.getEtaSeconds(), row.getCreatedAt())).toList();
+                row.getEtaSeconds(), row.getCreatedAt(), row.getEngineState(), row.getCanRetry())).toList();
     }
 }

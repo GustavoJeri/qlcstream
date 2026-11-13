@@ -15,12 +15,23 @@ export interface DownloadSummary {
   sourceType: string | null;
   dynamicRange: string | null;
   status: string;
+  engineState: string | null;
+  canRetry: boolean;
   progress: number;
   totalBytes: number | null;
   downloadedBytes: number;
   downloadSpeedBps: number;
   etaSeconds: number | null;
   createdAt: string;
+}
+
+export interface DownloadQueue {
+  items: DownloadSummary[];
+  sync: {
+    state: 'waiting' | 'available' | 'unavailable';
+    lastSuccessfulAt: string | null;
+    queueingEnabled: boolean;
+  };
 }
 
 export interface CreateDownloadRequest {
@@ -46,6 +57,10 @@ export class DownloadsApiService {
 
   active(): Observable<DownloadSummary[]> {
     return this.http.get<DownloadSummary[]>(apiUrl('/api/downloads'));
+  }
+
+  queue(): Observable<DownloadQueue> {
+    return this.http.get<DownloadQueue>(apiUrl('/api/downloads/queue'));
   }
 
   enqueue(request: CreateDownloadRequest): Observable<SubmittedDownload> {
