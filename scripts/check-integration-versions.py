@@ -5,9 +5,15 @@ import os
 import re
 import sys
 from urllib.parse import urlencode, urlsplit
-from urllib.request import HTTPCookieProcessor, Request, build_opener
+from urllib.request import HTTPCookieProcessor, HTTPRedirectHandler, Request, build_opener
 
 EXPECTED = {"qbittorrent": "5.3.0", "prowlarr": "2.7.0.5723"}
+
+
+class RejectRedirects(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # Credentials and session cookies must never follow a Location response.
+        return None
 
 
 def compare(service, observed):
@@ -23,7 +29,7 @@ def check(service, base, secret, username=""):
     parsed = urlsplit(base)
     if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ValueError("invalid_address")
-    opener = build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar()))
+    opener = build_opener(RejectRedirects(), HTTPCookieProcessor(http.cookiejar.CookieJar()))
     headers = {}
     if service == "qbittorrent":
         data = urlencode({"username": username, "password": secret}).encode()

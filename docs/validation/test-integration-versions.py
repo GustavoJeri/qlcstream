@@ -16,25 +16,29 @@ SCRATCH = ROOT / "data" / ("versions-validation-" + IDENT)
 SCRATCH.mkdir(parents=True)
 
 
-def run(args, **kwargs):
+def run(args, expected_error=None, **kwargs):
     result = subprocess.run(args, cwd=ROOT, capture_output=True, text=True, **kwargs)
+    if expected_error is not None:
+        assert result.returncode != 0 and expected_error in result.stderr, "expected fault was not detected"
+        return "PASS: rejected " + expected_error
     if result.returncode:
         # Only synthetic fixture commands are passed here. No service logs or personal config.
         raise RuntimeError(result.stdout + result.stderr)
     return result.stdout.strip()
 
 
-def compose(project, *args):
+def compose(project, *args, expected_error=None):
     files = ["-f", COMPOSE]
     if project == OLD:
         files += ["-f", str(SCRATCH / "previous.yaml")]
-    return run(["docker", "compose", "--env-file", ENV, "-p", project, *files, *args])
+    return run(["docker", "compose", "--env-file", ENV, "-p", project, *files, *args], expected_error=expected_error)
 
 
 def snapshot(project):
     files = compose(project, "run", "--rm", "--no-deps", "inspect", "-c",
                     "import hashlib,json,pathlib; paths=['/keys/integration-settings.key',"
                     "'/media/incoming/preserved.txt','/media/incoming/QLCStream.Owned.2026.1080p.bin',"
+                    "'/media/incoming/prowlarr-indexer.json',"
                     "'/prowlarr/config.xml','/engine/qBittorrent/config/qBittorrent.conf']; "
                     "print(json.dumps({p:hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() for p in paths},sort_keys=True))")
     rows = compose(project, "exec", "-T", "database", "psql", "-U", "versions_test", "-d", "versions_test", "-tAc",
@@ -67,7 +71,7 @@ try:
     compose(OLD, "build", "backend")
     print(compose(OLD, "run", "--rm", "--no-deps", "prepare"), flush=True)
     compose(OLD, "up", "-d", "database", "qbittorrent", "seeder", "prowlarr", "source", "backend")
-    print(compose(OLD, "run", "--rm", "--no-deps", "runner"), flush=True)
+    print(compose(OLD, "run", "--rm", "--no-deps", "runner", "python", "/fixture/versions-fixture.py", "test-clean"), flush=True)
     inspect_identity(OLD)
     # Verify physical file sharing from the actual backend identity, with no HTTP inference.
     proof = compose(OLD, "exec", "-T", "backend", "sh", "-c",
@@ -101,7 +105,27 @@ try:
     inspect_identity(NEW)
     compose(NEW, "stop", "backend", "qbittorrent", "prowlarr")
     assert snapshot(NEW) == before, "copied update changed preserved state"
+    # Fault injection affects only this run's synthetic copy; retain and restore its DB.
+    compose(NEW, "run", "--rm", "--no-deps", "inspect", "-c",
+            "from pathlib import Path; import shutil; root=Path('/prowlarr'); "
+            "backup=root/'fault-backup'; backup.mkdir(); files=list(root.glob('prowlarr.db*')); "
+            "assert files; [shutil.move(str(p),str(backup/p.name)) for p in files]")
+    compose(NEW, "start", "prowlarr")
+    print(compose(NEW, "run", "--rm", "--no-deps", "runner", "python", "/fixture/versions-fixture.py", "check-indexer",
+                  expected_error="persisted Prowlarr indexer missing or changed"), flush=True)
+    compose(NEW, "stop", "prowlarr")
+    compose(NEW, "run", "--rm", "--no-deps", "inspect", "-c",
+            "from pathlib import Path; import shutil; root=Path('/prowlarr'); "
+            "generated=root/'fault-generated'; generated.mkdir(); "
+            "[shutil.move(str(p),str(generated/p.name)) for p in root.glob('prowlarr.db*')]; "
+            "[shutil.move(str(p),str(root/p.name)) for p in (root/'fault-backup').iterdir()]")
+    compose(NEW, "start", "prowlarr")
+    compose(NEW, "run", "--rm", "--no-deps", "runner", "python", "/fixture/versions-fixture.py", "check-indexer")
+    compose(NEW, "stop", "prowlarr")
+    assert snapshot(NEW) == before, "fault recovery changed preserved state"
     (SCRATCH / "result.json").write_text(json.dumps({"status": "passed", "oldProject": OLD, "copyProject": NEW,
+                                                    "missingProwlarrDatabase": "rejected",
+                                                    "javaCancellation": "own_save_path_hash_preserved",
                                                     "preserved": before}, indent=2))
     print("PASS: clean install, restart, stopped synthetic volume copy and pinned recreation; files/key/settings unchanged")
 finally:

@@ -91,6 +91,8 @@ python scripts/check-integration-versions.py
 
 O comando não lê `.env`, não salva credenciais nem imprime endereços, corpos remotos ou exceções. Consulta login + `/api/v2/app/version` e `/api/v1/system/status`. Retorna serviço, versão esperada, observada e `match`/`mismatch`; falha de consulta produz `check_failed`. Divergência ou falha retorna código 1. Use HTTPS fora de rede local confiável e evite senhas em linhas de comando/capturas.
 
+Redirecionamentos HTTP são recusados em todas as chamadas, inclusive login, para impedir encaminhamento de chaves e cookies. Se houver um proxy com redirecionamento, informe diretamente a URL final da API. A recusa retorna `check_failed`, sem imprimir o destino ou as credenciais.
+
 Essa leitura confere a **aplicação**, não a revisão da imagem. Consulte localmente `docker compose images` e `docker inspect --format '{{.Config.Image}} {{.Image}}' <id-do-contêiner>`; compare a referência com a tabela e o ID com `docker image inspect --format '{{.Id}}' <referência-fixada>`. Não compare ID local de configuração com digest de índice. A fixture faz essa comparação automaticamente. O inicializador usa `--no-recreate`: contêineres existentes podem continuar com outra imagem; a conferência informa divergência sem atualizar nada.
 
 ## Matriz e evidências
@@ -110,13 +112,17 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/validation/Test-Win
 | Versão/divergência | APIs reais retornaram qBittorrent `5.3.0` e Prowlarr `2.7.0.5723`; IDs das imagens conferidos. Testes controlados verificam divergência, corpo inválido, recusa, saída sem segredos e retorno do CLI. |
 | qBittorrent | Autenticação correta/recusada, preferências/lista; inclusão real de URL com **HTTP 202/JSON `pending_count`** nos dois motores; stop/start/recheck; remoção com `deleteFiles=false`. Respostas antigas 200/`Ok.` e 204 continuam cobertas por simulação, não são inferidas dessa imagem. |
 | Transferência | Torrent privado sem tracker; DHT/PeX/LSD desabilitados, rede interna e peer explícito. Bytes próprios, SHA-256 `d142b96363fa0c7880f054659a9cb14980a6e2f1fcfe3877952d78736a676389`; backend leu o mesmo hash e cancelamento preservou arquivos. |
-| Cliente Java real | Inclusão de série pelo backend, consulta/sincronização, PAUSE/RESUME/CANCEL. Recheck observado diretamente na API real; sua escolha pelo fluxo de erro do Java continua coberta por regressão simulada. |
+| Cliente Java real | Inclusão de série pelo backend, consulta/sincronização, PAUSE/RESUME/CANCEL. O seeder permanece disponível até transferir os bytes para o `save_path` vinculado ao pedido Java; o SHA-256 desse mesmo arquivo é conferido antes e depois de CANCEL. Recheck observado diretamente na API real; sua escolha pelo fluxo de erro do Java continua coberta por regressão simulada. |
 | Prowlarr | Status e busca reais; chave inválida recusada em ambos. Indexador Torznab próprio configurado pela API; resultado encontrado diretamente e por `/api/search/releases` do backend. Não certifica fontes externas. |
 | Instalação/persistência | Instalação limpa com chave e adoção explícitas; parada/início; cópia offline de sete volumes para outro projeto e recriação com tag+digest. Hashes idênticos de chave, configuração dos serviços, mídia e linhas cifradas de `integration_settings`; indexador persistido continua consultável. |
 | Permissões | Backend UID 100/grupo suplementar 1000, motor UID/GID 1000; `incoming` nova 100:1000:2770. Escrita/leitura cruzada, diretório/chave/link existentes preservados. Diagnóstico HTTP corretamente mantém equivalência física inconclusiva. |
 | Inicializador | 83 assertivas no Windows PowerShell 5.1 e PowerShell 7. Docker real: primeira preparação, reabertura e parada/início; IDs, ambiente, banco, chave, integração gerenciada e mídia preservados. |
 
-Execução local concluída: projetos sintéticos com sufixo `28bbf7f4e7`; resultados em `data/versions-validation-28bbf7f4e7/result.json`. Fixture real do inicializador: sufixo `d949292e`. Arquivos e volumes sintéticos foram mantidos localmente para inspeção e não entram no Git.
+A preparação de chave/configurações e do indexador ocorre somente na fase `test-clean`. `test-existing` exige a chave e as integrações anteriores, além de comparar identidade e configuração do indexador com o marcador sintético persistido; não recria dados ausentes. A matriz também retém temporariamente o banco Prowlarr apenas da cópia sintética, confirma que a validação recusa sua perda e restaura o banco original da fixture. Essa injeção não é um procedimento certificado de recuperação de produção.
+
+Os quatro testes do verificador incluem 45 combinações de status 301/302/303/307/308, destinos absolutos, relativos e entre portas, nos três caminhos autenticados. Nenhuma requisição chega ao destino do redirecionamento. Controles legítimos preservam login 200/204 com sessão por cookie e código de saída/relato sem segredos.
+
+Execução inicial: sufixo `28bbf7f4e7`. Após corrigir os achados da revisão da PR #35, a matriz foi repetida com sufixo `2eb34a2ddc`, incluindo recusa de perda do banco Prowlarr e hash do arquivo da própria transferência Java antes/depois de CANCEL; resultados em `data/versions-validation-2eb34a2ddc/result.json`. Fixture real do inicializador: sufixo `d949292e`. Arquivos e volumes sintéticos foram mantidos localmente para inspeção e não entram no Git.
 
 A instalação anterior sintética usa os digests capturados do antigo `latest` e mantém `QBT_VERSION=5.1.4` para demonstrar que ela não seleciona o binário. A cópia atualizada adota tag+digest. **As aplicações têm a mesma versão antes/depois**: a prova cobre fixação/recriação com dados existentes, não migração entre releases diferentes. Nenhum dado pessoal foi copiado.
 

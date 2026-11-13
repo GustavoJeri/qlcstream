@@ -146,7 +146,20 @@ def wait(probe, description, seconds=120):
     raise AssertionError("timeout: " + description)
 
 
-def test():
+def indexer_state(indexers):
+    return [{key: item[key] for key in ("id", "name", "enable", "implementation", "configContract", "appProfileId", "priority", "fields")}
+            for item in sorted(indexers, key=lambda item: item["id"])]
+
+
+def check_indexer(p):
+    marker = Path("/media/incoming/prowlarr-indexer.json")
+    assert marker.exists(), "persisted Prowlarr indexer marker missing"
+    expected = json.loads(marker.read_text())
+    observed = indexer_state(p.call("/api/v1/indexer"))
+    assert observed == expected, "persisted Prowlarr indexer missing or changed"
+
+
+def test(clean):
     spec = importlib.util.spec_from_file_location("versions", "/scripts/check-integration-versions.py")
     versions = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(versions)
@@ -188,7 +201,8 @@ def test():
     assert seed.call("/api/v2/torrents/info") == []
     # Persisted managed configuration is created explicitly only on a clean fixture.
     existing = b.call("/api/system/integration-settings/key")["ready"]
-    if not existing:
+    assert existing != clean, "unexpected installation key state"
+    if clean:
         b.call("/api/system/integration-settings/key", "POST", {})
         for service, base, secret in (("qbittorrent", q.base, PASSWORD), ("prowlarr", p.base, API_KEY)):
             change = {"source": "application", "baseUrl": base, "username": USER,
@@ -198,11 +212,14 @@ def test():
         b.call("/api/library/storage", "PUT", {"downloadDirectory": "incoming"})
         Path("/media/incoming/preserved.txt").write_text("synthetic prior media")
     assert Path("/media/incoming/preserved.txt").read_text() == "synthetic prior media"
-    assert all(row["configured"] and row["source"] == "application" for row in
-               b.call("/api/system/integration-settings") if row["id"] in ("qbittorrent", "prowlarr"))
-    # Create a local-only Torznab indexer through Prowlarr's actual schema/API.
+    managed = {row["id"]: row for row in b.call("/api/system/integration-settings")
+               if row["id"] in ("qbittorrent", "prowlarr")}
+    assert set(managed) == {"qbittorrent", "prowlarr"}
+    assert all(row["configured"] and row["source"] == "application" for row in managed.values())
+    # Only a clean installation may create state. Existing installations must retain it.
     indexers = p.call("/api/v1/indexer")
-    if not indexers:
+    if clean:
+        assert indexers == [], "clean installation already has indexers"
         schema = next(item for item in p.call("/api/v1/indexer/schema") if item["implementation"] == "Torznab")
         schema.update(name="Owned fixture", enable=True, appProfileId=1, priority=25)
         for field in schema["fields"]:
@@ -213,6 +230,8 @@ def test():
             elif field["name"] == "apiKey":
                 field["value"] = "fictional_source_key"
         p.call("/api/v1/indexer", "POST", schema)
+        Path("/media/incoming/prowlarr-indexer.json").write_text(json.dumps(indexer_state(p.call("/api/v1/indexer")), sort_keys=True))
+    check_indexer(p)
     found = p.call("/api/v1/search?query=Owned&type=search")
     assert any(item["title"] == NAME for item in found), "real Prowlarr search missing result"
     assert any(item["title"] == NAME for item in b.call("/api/search/releases?query=Owned&year=2026"))
@@ -242,7 +261,6 @@ def test():
     q.post("torrents/recheck", {"hashes": HASH})
     wait(lambda: any(t["progress"] == 1 and not t["state"].startswith("checking") for t in q.call("/api/v2/torrents/info")), "recheck owned bytes")
     q.post("torrents/delete", {"hashes": HASH, "deleteFiles": "false"})
-    seed.post("torrents/delete", {"hashes": HASH, "deleteFiles": "false"})
     wait(lambda: q.call("/api/v2/torrents/info") == [], "removal")
     assert hashlib.sha256(downloaded.read_bytes()).hexdigest() == DIGEST
     # Exercise the production Java client as well as direct protocol observations.
@@ -259,10 +277,17 @@ def test():
     wait(lambda: q.call("/api/v2/torrents/info")[0]["state"].startswith("stopped"), "Java pause")
     b.raw("/api/downloads/" + identifier + "/RESUME", "POST", {})
     wait(lambda: not q.call("/api/v2/torrents/info")[0]["state"].startswith("stopped"), "Java resume")
+    java_torrent = q.call("/api/v2/torrents/info")[0]
+    assert java_torrent["hash"] == HASH
+    assert java_torrent["save_path"].rstrip("/") == "/downloads/incoming/" + identifier
+    java_file = Path("/media/incoming") / identifier / NAME
+    wait(transferred, "Java-owned peer transfer", 180)
+    assert hashlib.sha256(java_file.read_bytes()).hexdigest() == DIGEST
     b.raw("/api/downloads/" + identifier + "/CANCEL", "POST", {})
     wait(lambda: q.call("/api/v2/torrents/info") == [], "Java cancel")
-    assert hashlib.sha256(downloaded.read_bytes()).hexdigest() == DIGEST
-    print("PASS: production Java client via series submission, polling, PAUSE/RESUME/CANCEL")
+    assert hashlib.sha256(java_file.read_bytes()).hexdigest() == DIGEST
+    seed.post("torrents/delete", {"hashes": HASH, "deleteFiles": "false"})
+    print("PASS: production Java client via series submission, polling, PAUSE/RESUME/CANCEL; its downloaded bytes preserved")
     print("PASS: real login/refusal, preferences/list, Prowlarr status/refusal/search and backend search/diagnosis")
     print("PASS: stop/start/recheck, private peer transfer SHA256=" + DIGEST + ", deleteFiles=false preserved bytes")
     print("PASS: " + ("existing copied/restarted" if existing else "clean") + " installation; managed settings, key availability, indexer and media")
@@ -274,5 +299,9 @@ if __name__ == "__main__":
         prepare()
     elif action == "serve":
         ThreadingHTTPServer(("0.0.0.0", 8000), Source).serve_forever()
-    elif action == "test":
-        test()
+    elif action in ("test-clean", "test-existing"):
+        test(clean=action == "test-clean")
+    elif action == "check-indexer":
+        p = API("http://prowlarr:9696", API_KEY)
+        wait(lambda: p.call("/api/v1/system/status"), "prowlarr")
+        check_indexer(p)
