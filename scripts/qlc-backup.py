@@ -8,7 +8,8 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+import posixpath
 import re
 import subprocess
 import sys
@@ -61,8 +62,9 @@ def compatibility():
             for p in sorted(paths)}
 
 
-def private(action, vault, keys, payload, mounts=()):
+def private_command(action, vault, keys, mounts=()):
     args = ['run', '--rm', '-i', '--network', 'none', '--pull', 'never', '--read-only',
+            '--log-driver', 'none',
             '--cap-drop', 'ALL', '--cap-add', 'CHOWN', '--cap-add', 'DAC_OVERRIDE', '--cap-add', 'FOWNER',
             '--cap-add', 'FSETID',
             '--security-opt', 'no-new-privileges', '--tmpfs', '/tmp:rw,noexec,nosuid']
@@ -70,7 +72,11 @@ def private(action, vault, keys, payload, mounts=()):
                                          (keys, '/keyvault', action != 'create', 'volume'), *mounts]:
         require(',' not in source, 'MONTAGEM_NAO_SUPORTADA')
         args += ['--mount', f'type={kind},source={source},target={target}' + (',readonly' if readonly else '')]
-    return docker(*args, HELPER, action, data=json.dumps(payload).encode())
+    return [*args, HELPER, action]
+
+
+def private(action, vault, keys, payload, mounts=()):
+    return docker(*private_command(action, vault, keys, mounts), data=json.dumps(payload).encode())
 
 
 def safe_name(value):
@@ -112,11 +118,61 @@ def source(project):
     return result
 
 
-def mount(c, destination):
-    found = [m for m in c['Mounts'] if m['Destination'] == destination]
+def source_mount(c, destination):
+    found = [m for m in c['Mounts'] if posixpath.normpath(m['Destination']) == posixpath.normpath(destination)]
     require(len(found) == 1 and found[0]['Type'] in ('volume', 'bind'), 'MONTAGEM_NAO_SUPORTADA')
     m = found[0]
+    options = [item for item in c.get('HostConfig', {}).get('Mounts', []) or []
+               if posixpath.normpath(item.get('Target', '')) == posixpath.normpath(destination)]
+    require(not any((item.get('VolumeOptions') or {}).get('Subpath')
+                    or (item.get('VolumeOptions') or {}).get('SubPath') for item in options)
+            and not m.get('SubPath') and not m.get('Subpath'), 'SUBDIRETORIO_DE_VOLUME_NAO_SUPORTADO')
+    return m
+
+
+def mount(c, destination):
+    m = source_mount(c, destination)
     return m.get('Name') if m['Type'] == 'volume' else m['Source'], m['Type']
+
+
+def normalized_source(value):
+    # These are paths reported by the daemon, not host paths to open or resolve.
+    windows = bool(re.match(r'^[A-Za-z]:[\\/]', value)) or value.startswith('\\\\')
+    value = posixpath.normpath(value.replace('\\', '/'))
+    return PurePosixPath(value.casefold() if windows else value)
+
+
+def mounts_overlap(left, right):
+    if left['Type'] == right['Type'] == 'volume' and left.get('Name') and left.get('Name') == right.get('Name'):
+        return True
+    if not left.get('Source') or not right.get('Source'):
+        return False
+    a, b = normalized_source(left['Source']), normalized_source(right['Source'])
+    return a == b or a in b.parents or b in a.parents
+
+
+def require_idle_mounts(selected):
+    ids = docker('ps', '-q').decode().split()
+    if not ids:
+        return
+    # Inspect only mount metadata. Never retrieve other projects' environments/logs.
+    lines = docker('inspect', '--format', '{{json .Mounts}}', *ids).decode().splitlines()
+    active = [item for line in lines for item in (json.loads(line) or [])]
+    require(not any(mounts_overlap(a, b) for a in selected for b in active), 'VOLUME_EM_USO')
+
+
+def stop_options(config):
+    require('stopTimeout' in config and 'stopSignal' in config, 'BACKUP_INCOMPLETO')
+    timeout, signal = config['stopTimeout'], config['stopSignal']
+    require(timeout is None or type(timeout) is int and timeout >= -1, 'BACKUP_INCOMPLETO')
+    require(signal is None or isinstance(signal, str) and '\n' not in signal and '\r' not in signal,
+            'BACKUP_INCOMPLETO')
+    options = []
+    if timeout is not None:
+        options += ['--stop-timeout', str(timeout)]
+    if signal:
+        options += ['--stop-signal', signal]
+    return options
 
 
 def environment(c):
@@ -162,7 +218,7 @@ def backup(args):
             and app_env.get('MEDIA_ROOT') == '/data', 'TOPOLOGIA_NAO_SUPORTADA')
     mount(c['database'], '/var/lib/postgresql')
     require(db_env.get('PGDATA', '').startswith('/var/lib/postgresql/'), 'TOPOLOGIA_NAO_SUPORTADA')
-    mounts = []
+    mounts, selected = [], []
     for component, (service, destination) in MOUNTS.items():
         # Support the fixture's equivalent key path by reading the declared key setting.
         if component == 'keys':
@@ -170,10 +226,9 @@ def backup(args):
             require(key_path.endswith('/integration-settings.key'), 'CHAVE_CAMINHO_NAO_SUPORTADO')
             destination = str(Path(key_path).parent).replace('\\', '/')
         location, kind = mount(c[service], destination)
-        # Never copy from a mount used by any running container except this database.
-        active = docker('ps', '-q', '--filter', 'volume=' + location).decode().split()
-        require(not active, 'VOLUME_EM_USO')
+        selected.append(source_mount(c[service], destination))
         mounts.append((location, '/source/' + component, True, kind))
+    require_idle_mounts(selected)
     require(mount(c['backend'], '/data') == mount(c['qbittorrent'], '/downloads'), 'MIDIA_DIVERGENTE')
     # Only the standard single-database application is supported. No extra runtime mounts.
     for service, expected in {'database': 1, 'backend': 2, 'frontend': 0, 'prowlarr': 1, 'qbittorrent': 2}.items():
@@ -196,6 +251,8 @@ def backup(args):
                            'digests': image.get('RepoDigests', []), 'os': image['Os'], 'arch': image['Architecture']}
         services[service] = {'image': image['Id'], 'environment': environment(container),
                              'user': container['Config']['User'], 'group_add': container['HostConfig']['GroupAdd'] or [],
+                             'stopTimeout': container['Config'].get('StopTimeout'),
+                             'stopSignal': container['Config'].get('StopSignal'),
                              'entrypoint': container['Config']['Entrypoint'], 'command': container['Config']['Cmd']}
     manifest = {'format': 1, 'createdUtc': datetime.now(timezone.utc).isoformat(),
                 'commit': run('git', 'rev-parse', 'HEAD').decode().strip(), 'compatibility': compatibility(),
@@ -216,7 +273,11 @@ def backup(args):
 def metadata(args):
     require(exists('volume', args.vault), 'BACKUP_AUSENTE')
     require(args.key_vault and exists('volume', args.key_vault), 'CHAVE_AUSENTE')
-    return json.loads(private('metadata', args.vault, args.key_vault, {'compatibility': compatibility()}))
+    m = json.loads(private('metadata', args.vault, args.key_vault, {'compatibility': compatibility()}))
+    require(set(m['services']) == set(SERVICES), 'BACKUP_INCOMPLETO')
+    for config in m['services'].values():
+        stop_options(config)
+    return m
 
 
 def restore(args):
@@ -253,6 +314,7 @@ def restore(args):
                   # Compose builds may bake source project labels into the image.
                   '--label', 'com.docker.compose.project=' + args.target,
                   '--label', 'com.docker.compose.service=' + service]
+        params += stop_options(config)
         if config['user']:
             params += ['--user', config['user']]
         for group in config['group_add']:

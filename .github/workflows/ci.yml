@@ -25,6 +25,8 @@ jobs:
           persist-credentials: false
       - name: Construir ferramenta administrativa explicitamente
         run: docker build -t qlcstream-backup-helper:1 scripts/backup
+      - name: Validar guardas de montagem logging e parada
+        run: python3 docs/validation/test-backup-command.py
       - name: Recusar arquivos inseguros e preservar exclusao de midia
         run: docker run --rm --network none -v "$PWD/docs/validation:/tests:ro" --entrypoint python3 qlcstream-backup-helper:1 /tests/test-backup-package.py
       - name: Recuperar somente instalacao sintetica isolada
