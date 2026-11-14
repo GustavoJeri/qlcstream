@@ -216,10 +216,13 @@ export class CatalogPage {
       });
     });
     this.destroyRef.onDestroy(() => this.saveNavigationState());
+    let initialRoute = true;
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
       const input = params.get('q')?.replace(/\s+/g, ' ').trim() ?? '';
       const query = input.length >= 2 ? input : '';
-      const restored = this.navigationState.restoreFor(query);
+      // Restore only on entry; edits to this page's search retain its current filters.
+      const restored = initialRoute ? this.navigationState.restoreFor(query) : null;
+      initialRoute = false;
       if (restored) {
         this.restoreNavigationState(restored);
         return;
