@@ -1,5 +1,8 @@
 use std::{path::{Component, Path, PathBuf}, process::Command};
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 #[cfg(target_os = "macos")]
 use tauri::Manager;
 
@@ -29,8 +32,13 @@ fn library_file(relative_path: &str) -> Result<PathBuf, String> {
 }
 
 fn library_root() -> Result<PathBuf, String> {
+  let project = std::env::var("QLCSTREAM_COMPOSE_PROJECT").unwrap_or_else(|_| "qlc-stream".to_string());
+  if !valid_project(&project) {
+    return Err("O projeto Docker configurado para este aplicativo é inválido.".to_string());
+  }
+  let project_filter = format!("label=com.docker.compose.project={project}");
   let container = docker_output(&[
-    "ps", "--filter", "label=com.docker.compose.project=qlc-stream",
+    "ps", "--filter", &project_filter,
     "--filter", "label=com.docker.compose.service=backend", "--format", "{{.ID}}",
   ])?;
   let container = container.lines().next().filter(|id| !id.is_empty())
@@ -46,6 +54,12 @@ fn library_root() -> Result<PathBuf, String> {
   Ok(root)
 }
 
+fn valid_project(value: &str) -> bool {
+  !value.is_empty() && value.as_bytes()[0].is_ascii_alphanumeric()
+    && value.bytes().all(|character| character.is_ascii_lowercase()
+      || character.is_ascii_digit() || character == b'-' || character == b'_')
+}
+
 #[cfg(target_os = "windows")]
 fn windows_compatible_path(path: &Path) -> PathBuf {
   let text = path.to_string_lossy();
@@ -58,11 +72,20 @@ fn windows_compatible_path(path: &Path) -> PathBuf {
   }
 }
 
+#[cfg(any(target_os = "windows", test))]
+fn start_application(command: &mut Command, error: &str) -> Result<(), String> {
+  let mut child = command.spawn().map_err(|_| error.to_string())?;
+  // The player can remain open for hours; do not block the webview command thread.
+  // Explorer may return a nonzero code after handing the request to its existing process.
+  std::thread::spawn(move || { let _ = child.wait(); });
+  Ok(())
+}
+
 #[tauri::command]
 fn open_library_file(relative_path: String) -> Result<(), String> {
   let file = library_file(&relative_path)?;
   #[cfg(target_os = "windows")]
-  let status = {
+  let result = {
     let file = windows_compatible_path(&file);
     let mut vlc_candidates = Vec::new();
     if let Ok(program_files) = std::env::var("ProgramFiles") {
@@ -76,25 +99,30 @@ fn open_library_file(relative_path: String) -> Result<(), String> {
     }
     let vlc = vlc_candidates.into_iter().find(|candidate| candidate.is_file())
       .unwrap_or_else(|| PathBuf::from("vlc.exe"));
-    Command::new(vlc).arg(file).status()
+    start_application(Command::new(vlc).arg(file), "O VLC não está instalado ou não pôde ser iniciado.")
   };
   #[cfg(not(target_os = "windows"))]
-  let status = Command::new("open").args(["-a", "VLC"]).arg(&file).status();
-  let status = status
-    .map_err(|_| "O VLC não está instalado ou não pôde ser iniciado.".to_string())?;
-  if status.success() { Ok(()) } else { Err("O VLC não pôde abrir o arquivo selecionado.".to_string()) }
+  let result = {
+    let status = Command::new("open").args(["-a", "VLC"]).arg(&file).status()
+      .map_err(|_| "O VLC não está instalado ou não pôde ser iniciado.".to_string())?;
+    if status.success() { Ok(()) } else { Err("O VLC não pôde abrir o arquivo selecionado.".to_string()) }
+  };
+  result
 }
 
 #[tauri::command]
 fn reveal_library_file(relative_path: String) -> Result<(), String> {
   let file = library_file(&relative_path)?;
+  // Explorer parses /select itself: quote the path after the comma, not the whole switch.
   #[cfg(target_os = "windows")]
-  let status = Command::new("explorer.exe").arg(format!("/select,{}", file.display())).status();
+  let result = start_application(Command::new("explorer.exe").raw_arg(format!("/select,\"{}\"", windows_compatible_path(&file).display())), "O gerenciador de arquivos não pôde ser iniciado.");
   #[cfg(not(target_os = "windows"))]
-  let status = Command::new("open").arg("-R").arg(&file).status();
-  let status = status
-    .map_err(|_| "O gerenciador de arquivos não pôde ser iniciado.".to_string())?;
-  if status.success() { Ok(()) } else { Err("O gerenciador de arquivos não pôde revelar o arquivo selecionado.".to_string()) }
+  let result = {
+    let status = Command::new("open").arg("-R").arg(&file).status()
+      .map_err(|_| "O gerenciador de arquivos não pôde ser iniciado.".to_string())?;
+    if status.success() { Ok(()) } else { Err("O gerenciador de arquivos não pôde revelar o arquivo selecionado.".to_string()) }
+  };
+  result
 }
 
 #[tauri::command]
@@ -128,6 +156,35 @@ fn open_external_url(url: String) -> Result<(), String> {
   let status = status
     .map_err(|_| "Não foi possível abrir o navegador.".to_string())?;
   if status.success() { Ok(()) } else { Err("Não foi possível abrir o navegador.".to_string()) }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn project_override_is_a_single_compose_project_name() {
+    assert!(valid_project("qlc-native-123_test"));
+    for invalid in ["", "-project", "Project", "project\nother", "project=other", "../project"] {
+      assert!(!valid_project(invalid), "{invalid:?}");
+    }
+  }
+
+  #[test]
+  fn missing_application_returns_the_controlled_launch_error() {
+    let directory = std::env::temp_dir().join(format!("qlc-missing-player-{}", std::process::id()));
+    assert!(!directory.exists());
+    let result = start_application(&mut Command::new(directory.join("missing-vlc.exe")), "Reprodutor indisponível");
+    assert_eq!(result, Err("Reprodutor indisponível".to_string()));
+  }
+
+  #[cfg(target_os = "windows")]
+  #[test]
+  fn desktop_paths_preserve_spaces_accents_and_unc_shares() {
+    assert_eq!(windows_compatible_path(Path::new(r"\\?\C:\Mídia própria\vídeo um.avi")), PathBuf::from(r"C:\Mídia própria\vídeo um.avi"));
+    assert_eq!(windows_compatible_path(Path::new(r"\\?\UNC\server\Mídia própria\vídeo um.avi")), PathBuf::from(r"\\server\Mídia própria\vídeo um.avi"));
+    assert_eq!(windows_compatible_path(Path::new(r"C:\Mídia própria\vídeo um.avi")), PathBuf::from(r"C:\Mídia própria\vídeo um.avi"));
+  }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
