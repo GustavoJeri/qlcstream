@@ -15,6 +15,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  backup-restore:
+    name: Backup restore
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Construir ferramenta administrativa explicitamente
+        run: docker build -t qlcstream-backup-helper:1 scripts/backup
+      - name: Validar guardas de montagem logging e parada
+        run: python3 docs/validation/test-backup-command.py
+      - name: Recusar arquivos inseguros e preservar exclusao de midia
+        run: docker run --rm --network none -v "$PWD/docs/validation:/tests:ro" --entrypoint python3 qlcstream-backup-helper:1 /tests/test-backup-package.py
+      - name: Recuperar somente instalacao sintetica isolada
+        run: python3 docs/validation/test-backup-restore.py
+      # No uploads: packages, keys, database/profile snapshots stay private to runner.
+
   integration-versions:
     name: Integration versions
     runs-on: ubuntu-latest
