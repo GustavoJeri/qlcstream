@@ -208,8 +208,12 @@ export class CatalogPage {
       if (query !== this.query().replace(/\s+/g, ' ').trim()) return;
       const normalized = query.length >= 2 ? query : '';
       if (normalized === this.lastSubmittedQuery()) return;
-      this.lastSubmittedQuery.set(normalized);
-      this.load(normalized.length >= 2 ? this.catalogApi.search(normalized) : this.catalogApi.discover(this.activeFilter(), 'pt-BR', 1, this.sortBy()));
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { q: normalized || null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
     });
     this.destroyRef.onDestroy(() => this.saveNavigationState());
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
@@ -239,7 +243,7 @@ export class CatalogPage {
   search(): void {
     const input = this.query().replace(/\s+/g, ' ').trim();
     const query = input.length >= 2 ? input : '';
-    if (query === this.lastSubmittedQuery()) {
+    if (query === this.lastSubmittedQuery() && query === (this.route.snapshot.queryParamMap.get('q') ?? '')) {
       this.retry();
       return;
     }
@@ -399,7 +403,6 @@ export class CatalogPage {
           next: (ids) => this.addedMovieIds.set(new Set(ids)),
         });
         this.libraryApi.favorites().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({ next: (items) => this.favoriteMovieIds.set(new Set(items.filter((item) => item.mediaType === 'MOVIE').map((item) => item.tmdbId))) });
-    this.loadPersonalizedRecommendations();
         this.loadPersonalizedRecommendations();
       },
       error: (error: unknown) => {
