@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [develop, main]
+    branches: [develop, main, integration/qlcstream]
   push:
-    branches: [develop, main]
+    branches: [develop, main, integration/qlcstream]
   workflow_dispatch:
 
 permissions:
@@ -27,12 +27,26 @@ jobs:
         run: python3 docs/validation/test-version-checker.py
       - name: Validar imagens reais em rede interna e copia sintetica
         run: python3 docs/validation/test-integration-versions.py
+      - name: Recusar escapes e troca de diretorios na exclusao
+        run: >-
+          docker run --rm --network none
+          -v "$PWD/backend/docker:/tests/backend/docker:ro"
+          -v "$PWD/docs/validation:/tests/docs/validation:ro"
+          python:3.13-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e
+          python /tests/docs/validation/test-library-file-delete.py
+      - name: Validar cancelamento tardio exclusao e reconexao SSE
+        run: |
+          docker build -t qlcstream-file-actions-ci backend
+          docker build -t qlcstream-file-actions-web-ci frontend
+          python3 docs/validation/test-integration-file-actions.py --image qlcstream-file-actions-ci --frontend-image qlcstream-file-actions-web-ci --evidence-dir data/file-actions-validation
       - name: Guardar resultados sinteticos
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: integration-version-results
-          path: data/versions-validation-*/*.json
+          path: |
+            data/versions-validation-*/*.json
+            data/file-actions-validation/*-results.json
           if-no-files-found: ignore
           retention-days: 7
 
