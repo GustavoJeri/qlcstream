@@ -1,5 +1,7 @@
 # Evolução incremental do fork
 
+O trabalho conjunto no repositório original está organizado no [plano upstream #6](https://github.com/diegodinizm1/qlcstream/issues/6). Consulte o [mapa de continuidade](colaboracao-upstream.md) para os novos números e o histórico preservado. As entregas abaixo registram o estado do fork e não significam publicação em `main` do upstream.
+
 Objetivo: usar o QLC Stream com downloads confiáveis e reduzir a configuração manual do primeiro acesso. O projeto original e sua autoria são preservados; melhorias futuras podem ser propostas ao upstream em mudanças pequenas.
 
 ## Entregue — F00: confiabilidade dos downloads
