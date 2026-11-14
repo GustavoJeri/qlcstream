@@ -62,7 +62,9 @@ import { apiUrl } from '../core/api-url';
                       <button type="button" [disabled]="disabled" aria-label="Diminuir prioridade" (click)="control(download, 'priority_down')"><i class="ph ph-caret-down"></i></button>
                     </span>
                   }
-                  <button class="text-action danger-action" type="button" [disabled]="disabled" (click)="control(download, 'cancel')">Cancelar transferência</button>
+                  @if (download.status !== 'CANCELED') {
+                    <button class="text-action danger-action" type="button" [disabled]="disabled" (click)="control(download, 'cancel')">Cancelar transferência</button>
+                  }
                 </div>
               </div>
             </article>
@@ -119,8 +121,9 @@ export class DownloadsPage {
   posterUrl(download: DownloadSummary): string { return tmdbImage(download.posterPath, 'thumbnail'); }
   percent(progress: number): string { return `${Math.round(progress * 100)}%`; }
   quality(download: DownloadSummary): string { return [download.resolutionHeight ? `${download.resolutionHeight}p` : null, download.sourceType, download.dynamicRange].filter(Boolean).join(' · ') || 'Qualidade não informada'; }
-  status(status: string): string { return ({ REQUESTED: 'Preparando', SUBMITTING: 'Enviando', METADATA: 'Lendo metadados', QUEUED: 'Na fila', DOWNLOADING: 'Baixando', PAUSED: 'Pausado', STALLED: 'Sem atividade', CHECKING: 'Verificando', SEEDING: 'Compartilhando', COMPLETED: 'Concluído', ERROR: 'Erro' } as Record<string, string>)[status] ?? status; }
+  status(status: string): string { return ({ CANCELED: 'Cancelamento pendente', REQUESTED: 'Preparando', SUBMITTING: 'Enviando', METADATA: 'Lendo metadados', QUEUED: 'Na fila', DOWNLOADING: 'Baixando', PAUSED: 'Pausado', STALLED: 'Sem atividade', CHECKING: 'Verificando', SEEDING: 'Compartilhando', COMPLETED: 'Concluído', ERROR: 'Erro' } as Record<string, string>)[status] ?? status; }
   transferMeta(download: DownloadSummary): string {
+    if (download.status === 'CANCELED') return 'Cancelamento solicitado. Aguardando o motor confirmar a remoção; arquivos mantidos.';
     if (download.engineState === 'missing') return 'Transferência ausente no qBittorrent. Cancele e escolha uma fonte novamente.';
     if (download.status === 'ERROR') {
       if (download.engineState === 'missingFiles') return 'Arquivo ausente. Verifique a pasta antes de tentar novamente.';
@@ -147,7 +150,7 @@ export class DownloadsPage {
       && ['METADATA', 'QUEUED', 'DOWNLOADING', 'STALLED', 'PAUSED'].includes(status); }
   control(download: DownloadSummary, action: 'pause' | 'resume' | 'retry' | 'priority_up' | 'priority_down' | 'cancel'): void {
     if (!this.engineAvailable() || this.pendingIds().has(download.id)) return;
-    if (action === 'cancel' && !confirm(`Cancelar a transferência de “${download.movieTitle}”? Os arquivos já baixados serão mantidos.`)) return;
+    if (action === 'cancel' && !confirm(`Cancelar a transferência de “${download.movieTitle}”? O torrent será removido do motor. Os arquivos já baixados e os arquivos da biblioteca serão mantidos.`)) return;
     this.actionError.set('');
     this.pendingIds.update(ids => new Set(ids).add(download.id));
     this.downloadsApi.control(download.id, action).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({

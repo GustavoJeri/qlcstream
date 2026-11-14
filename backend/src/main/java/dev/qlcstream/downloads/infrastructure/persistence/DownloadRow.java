@@ -160,6 +160,11 @@ public class DownloadRow {
         return infoHash;
     }
 
+    public void bindHash(String hash) {
+        externalId = hash;
+        infoHash = hash;
+    }
+
     public String status() { return status; }
 
     public boolean wasSubmittedBefore(Instant cutoff) { return createdAt.isBefore(cutoff); }
