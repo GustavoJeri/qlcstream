@@ -150,3 +150,6 @@ Se a candidata falhar, mantenha a origem intacta e descarte somente a cópia sin
 - [LinuxServer Prowlarr: tags, arquiteturas, PUID/PGID e persistência](https://docs.linuxserver.io/images/docker-prowlarr/) e [API oficial v1](https://prowlarr.com/docs/api/).
 - [Docker: identidade por digest](https://docs.docker.com/reference/cli/docker/image/pull/#pull-an-image-by-digest-immutable-identifier), [Compose up](https://docs.docker.com/reference/cli/docker/compose/up/) e [prazo de parada](https://docs.docker.com/reference/compose-file/services/#stop_grace_period).
 - Auxiliares oficiais: [PostgreSQL](https://hub.docker.com/_/postgres), [Alpine](https://hub.docker.com/_/alpine), [Python](https://hub.docker.com/_/python). Os manifests foram conferidos diretamente nos registries; os digests acima identificam a consulta.
+
+
+O [procedimento de backup e restauração](backup-restauracao.md) reúne dump lógico, perfis completos, chave original em guarda separada e mídia opcional. A recuperação cria destino isolado novo, exige compatibilidade e não aplica rollback Flyway nem substitui a instalação ativa.

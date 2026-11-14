@@ -97,3 +97,6 @@ A fixture `qlcstream-integrations-test` usa banco/volume próprios, chave e cred
 Na revisão da PR #32, foram acrescentadas regressões para troca da chave durante a execução e para endereços com barras finais. O cliente qBittorrent e os diagnósticos de conexão e armazenamento compartilham a montagem dos endpoints, preservando subpastas e removendo barras finais antes de acrescentar o caminho da API. Isso também se aplica às configurações existentes por ambiente, sem reescrevê-las.
 
 Após essas correções, `mvn verify` em Java 21/Linux aprovou **66 testes**, sem falhas nem testes ignorados, e gerou o pacote do backend. A regressão da chave cobre tanto a primeira gravação quanto o carregamento após reinício; a regressão de endereços consulta conexão, preferências e lista vazia de torrents em seis combinações de raiz/subpasta e barras finais, sem iniciar downloads.
+
+
+O [procedimento de backup e restauração](backup-restauracao.md) reúne dump lógico, perfis completos, chave original em guarda separada e mídia opcional. A recuperação cria destino isolado novo, exige compatibilidade e não aplica rollback Flyway nem substitui a instalação ativa.
