@@ -1,4 +1,4 @@
-import { apiUrl } from './api-url';
+import { apiUrl, isDesktopApp } from './api-url';
 
 describe('Desktop API isolation', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -19,6 +19,15 @@ describe('Desktop API isolation', () => {
       vi.stubGlobal('QLCSTREAM_DESKTOP_API_ORIGIN', origin);
       expect(() => apiUrl('/api/library')).toThrow();
     }
+  });
+  it('does not mistake the Angular dev-server port for a Tauri bridge', () => {
+    vi.stubGlobal('window', {location: {hostname: 'localhost', port: '4201'}});
+    expect(isDesktopApp()).toBe(false);
+    expect(apiUrl('/api/library')).toBe('/api/library');
+  });
+  it('recognizes the injected Tauri bridge on the same dev-server port', () => {
+    vi.stubGlobal('window', {__TAURI_INTERNALS__: {}, location: {hostname: 'localhost', port: '4201'}});
+    expect(isDesktopApp()).toBe(true);
   });
   it('keeps ordinary web requests on their own origin', () => {
     vi.stubGlobal('window', {location: {hostname: 'localhost', port: '14291'}});

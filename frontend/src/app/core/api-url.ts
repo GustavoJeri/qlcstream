@@ -15,8 +15,7 @@ function desktopApiOrigin(): string {
 export function isDesktopApp(): boolean {
   if (typeof window === 'undefined') return false;
   return '__TAURI_INTERNALS__' in window
-    || window.location.hostname === 'tauri.localhost'
-    || window.location.port === '4201';
+    || window.location.hostname === 'tauri.localhost';
 }
 
 export function apiUrl(path: string): string {

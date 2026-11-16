@@ -1,6 +1,8 @@
 """Command contracts without Docker: mount identity, private logging and stop metadata."""
 import importlib.util
 import json
+import os
+import tempfile
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -16,6 +18,16 @@ def bind(source, target='/config'):
 
 
 class BackupCommandTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == 'posix', 'POSIX executable lookup regression')
+    def test_restore_resolves_host_docker_before_forwarding_container_path(self):
+        with tempfile.TemporaryDirectory() as folder:
+            executable = Path(folder) / 'docker'
+            executable.write_text('#!/bin/sh\nprintf "%s" "$PATH"\n')
+            executable.chmod(0o700)
+            with patch.dict(os.environ, {'PATH': folder}):
+                output = b.docker('create', '--env', 'PATH', environment={'PATH': '/container-only/bin'})
+            self.assertEqual(output, b'/container-only/bin')
+
     def test_every_private_action_disables_daemon_logging(self):
         for action in ('create', 'verify', 'metadata', 'extract', 'dump'):
             with self.subTest(action=action), patch.object(b, 'docker', return_value=b'private-result') as call:

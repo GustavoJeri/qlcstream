@@ -11,6 +11,7 @@ import os
 from pathlib import Path, PurePosixPath
 import posixpath
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -43,7 +44,12 @@ def run(*args, data=None, allow_failure=False, environment=None):
 
 
 def docker(*args, **kwargs):
-    return run('docker', *args, **kwargs)
+    # Resolve the host CLI before forwarding container variables through --env.
+    # In particular, a Linux container PATH must not decide how to find Docker
+    # on macOS, or in a user's private installation directory.
+    executable = shutil.which('docker')
+    require(executable is not None, 'DOCKER_INDISPONIVEL')
+    return run(str(Path(executable).absolute()), *args, **kwargs)
 
 
 def inspect(kind, name):
