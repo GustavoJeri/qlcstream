@@ -73,6 +73,7 @@ public class LocalLibraryRegistrar {
                     VALUES (NULL, ?, 1, ?, 'VIDEO', ?, ?, ?, ?, ?, ?)
                     ON CONFLICT (storage_root_id, relative_path) DO UPDATE
                     SET availability = 'PRESENT', last_verified_at = now()
+                    WHERE NOT local_file.deletion_requested AND local_file.availability <> 'DELETED'
                     """, downloadId, relativePath, Files.size(file), seriesTmdbId, seriesTitle, posterPath, seasonNumber, episodeNumber);
         } catch (IOException ignored) {
             // A file can disappear between directory discovery and registration.
@@ -87,6 +88,7 @@ public class LocalLibraryRegistrar {
                     VALUES (?, ?, 1, ?, 'VIDEO', ?)
                     ON CONFLICT (storage_root_id, relative_path) DO UPDATE
                     SET availability = 'PRESENT', last_verified_at = now()
+                    WHERE NOT local_file.deletion_requested AND local_file.availability <> 'DELETED'
                     """, movieId, downloadId, relativePath, Files.size(file));
         } catch (IOException ignored) {
             // A file can disappear between directory discovery and registration.

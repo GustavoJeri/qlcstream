@@ -18,7 +18,7 @@ import dev.qlcstream.downloads.infrastructure.web.DownloadUpdatePublisher;
 @Component
 public class QbittorrentDownloadSynchronizer {
 
-    private static final Set<String> FINAL_STATUSES = Set.of("COMPLETED", "CANCELED", "REMOVED");
+    private static final Set<String> FINAL_STATUSES = Set.of("COMPLETED", "REMOVED");
 
     private final SpringDataDownloadRepository downloads;
     private final QbittorrentClient qbittorrent;
@@ -63,11 +63,29 @@ public class QbittorrentDownloadSynchronizer {
         var torrentsByHash = torrents.stream()
                 .collect(Collectors.toMap(QbittorrentClient.TorrentSnapshot::hash, Function.identity(), (first, ignored) -> first));
         var torrentsByPath = torrents.stream()
-                .collect(Collectors.toMap(torrent -> normalizePath(torrent.savePath()), Function.identity(), (first, ignored) -> first));
+                .collect(Collectors.groupingBy(torrent -> normalizePath(torrent.savePath())));
         var changed = false;
         for (var download : downloads.findByStatusNotIn(FINAL_STATUSES)) {
             var torrent = download.infoHash() == null ? null : torrentsByHash.get(download.infoHash());
-            if (torrent == null) torrent = torrentsByPath.get(normalizePath("/downloads/" + download.relativeDirectory()));
+            // A known identity must never be replaced just because a folder was reused.
+            if (download.infoHash() == null || download.infoHash().isBlank()) {
+                var matches = torrentsByPath.getOrDefault(normalizePath("/downloads/" + download.relativeDirectory()), java.util.List.of());
+                if (matches.size() == 1) torrent = matches.getFirst();
+            }
+            if ("CANCELED".equals(download.status())) {
+                if (torrent != null) {
+                    try {
+                        qbittorrent.remove(torrent.hash());
+                        download.bindHash(torrent.hash());
+                    } catch (QbittorrentClient.QbittorrentUnavailableException unavailable) {
+                        // Keep the intent and retry; never report removal from a failed command.
+                    }
+                } else if (download.infoHash() != null && !download.infoHash().isBlank()) {
+                    download.markRemoved();
+                    changed = true;
+                }
+                continue;
+            }
             if (torrent != null) {
                 var status = statusFor(torrent.state(), torrent.progress());
                 var previousStatus = download.status();

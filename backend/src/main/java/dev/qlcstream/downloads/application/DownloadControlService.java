@@ -27,7 +27,8 @@ public class DownloadControlService {
             // A tentativa só pode controlar o torrent que usa a pasta reservada para ela.
             hash = qbittorrent.hashForSavePath("/downloads/" + download.relativeDirectory());
             if (hash == null && action == Action.CANCEL) {
-                download.markRemoved();
+                // URL retrieval may still be pending. Keep a durable cancellation intent.
+                download.markStatus("CANCELED");
                 return;
             }
             if (hash == null) throw new IllegalStateException("Esta tentativa ainda não está vinculada a um torrent. Aguarde ou cancele-a e selecione a fonte novamente.");
@@ -46,8 +47,24 @@ public class DownloadControlService {
             }
             case PRIORITY_UP -> qbittorrent.increasePriority(hash);
             case PRIORITY_DOWN -> qbittorrent.decreasePriority(hash);
-            case CANCEL -> { qbittorrent.remove(hash); download.markRemoved(); }
+            case CANCEL -> {
+                qbittorrent.remove(hash);
+                download.bindHash(hash);
+                download.markStatus("CANCELED");
+            }
         }
+    }
+
+    @Transactional
+    public boolean cancelForFileDeletion(UUID id) {
+        control(id, Action.CANCEL);
+        var download = downloads.findById(id).orElseThrow();
+        if ("REMOVED".equals(download.status())) return true;
+        var hash = download.infoHash();
+        if (hash == null || hash.isBlank()) return false;
+        if (qbittorrent.torrents().stream().anyMatch(torrent -> hash.equals(torrent.hash()))) return false;
+        download.markRemoved();
+        return true;
     }
 
     public enum Action { PAUSE, RESUME, RETRY, PRIORITY_UP, PRIORITY_DOWN, CANCEL }

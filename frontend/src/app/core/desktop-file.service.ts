@@ -18,12 +18,16 @@ export class DesktopFileService {
   }
 
   confirmDeletion(title: string): Promise<boolean> {
-    return confirm(`Excluir o arquivo local de “${title}”? Esta ação não pode ser desfeita.`, {
+    return confirm(this.deletionMessage(title), {
       title: 'Excluir arquivo',
       kind: 'warning',
       okLabel: 'Excluir',
       cancelLabel: 'Cancelar',
     });
+  }
+
+  deletionMessage(title: string): string {
+    return `Excluir somente o arquivo local “${title}”? A transferência vinculada será cancelada e este arquivo sairá da biblioteca. Os outros arquivos do torrent serão mantidos. Esta ação não pode ser desfeita.`;
   }
 
   async chooseDownloadDirectory(): Promise<string | null> {

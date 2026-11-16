@@ -31,11 +31,11 @@ public interface SpringDataDownloadRepository extends CrudRepository<DownloadRow
 
     @Query(value = """
             SELECT * FROM download
-            WHERE (acquisition_ref = :acquisitionRef OR release_title = :releaseTitle)
+            WHERE acquisition_ref = :acquisitionRef
               AND media_type = :mediaType
               AND movie_id IS NOT DISTINCT FROM CAST(:movieId AS bigint)
               AND series_tmdb_id IS NOT DISTINCT FROM CAST(:seriesTmdbId AS bigint)
-              AND status NOT IN ('CANCELED', 'REMOVED')
+              AND status <> 'REMOVED'
             ORDER BY CASE WHEN info_hash IS NOT NULL THEN 0 ELSE 1 END, created_at
             LIMIT 1
             """, nativeQuery = true)
@@ -50,7 +50,7 @@ public interface SpringDataDownloadRepository extends CrudRepository<DownloadRow
                    (d.status = 'ERROR' AND NULLIF(TRIM(d.info_hash), '') IS NOT NULL
                     AND d.engine_state IS DISTINCT FROM 'missing') AS can_retry
             FROM download d LEFT JOIN movie m ON m.id = d.movie_id
-            WHERE d.status NOT IN ('COMPLETED', 'CANCELED', 'REMOVED')
+            WHERE d.status NOT IN ('COMPLETED', 'REMOVED')
             ORDER BY d.created_at DESC
             """, nativeQuery = true)
     List<DownloadProjection> findActive();
