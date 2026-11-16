@@ -1,8 +1,5 @@
 package dev.qlcstream.library;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 
 import org.springframework.http.HttpStatus;
@@ -24,31 +21,30 @@ import jakarta.validation.constraints.NotBlank;
 @RequestMapping("/api/library")
 public class LibraryController {
 
-    @org.springframework.beans.factory.annotation.Value("${qlc-stream.storage.media-root:/data}")
-    private String mediaRoot = "/data";
-
     private final JdbcTemplate jdbc;
     private final LocalStorageSettings storageSettings;
+    private final LibraryDeletionService deletion;
 
-    public LibraryController(JdbcTemplate jdbc, LocalStorageSettings storageSettings) {
+    public LibraryController(JdbcTemplate jdbc, LocalStorageSettings storageSettings, LibraryDeletionService deletion) {
         this.jdbc = jdbc;
         this.storageSettings = storageSettings;
+        this.deletion = deletion;
     }
 
     @DeleteMapping("/{id}")
     void delete(@PathVariable long id) {
-        var relativePath = jdbc.query("SELECT relative_path FROM local_file WHERE id = ? AND availability = 'PRESENT'", result ->
-                result.next() ? result.getString(1) : null, id);
-        if (relativePath == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Arquivo não encontrado.");
-        var root = Path.of(mediaRoot).toAbsolutePath().normalize();
-        var file = root.resolve(relativePath).normalize();
-        if (!file.startsWith(root)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Caminho inválido.");
-        try {
-            Files.deleteIfExists(file);
-            jdbc.update("UPDATE local_file SET availability = 'DELETED', last_verified_at = now() WHERE id = ?", id);
-        } catch (IOException exception) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Não foi possível excluir o arquivo.");
-        }
+        deletion.delete(id);
+    }
+
+    @org.springframework.web.bind.annotation.ExceptionHandler(LibraryDeletionService.Failure.class)
+    org.springframework.http.ProblemDetail deletionFailure(LibraryDeletionService.Failure failure) {
+        return org.springframework.http.ProblemDetail.forStatusAndDetail(failure.status, failure.getMessage());
+    }
+
+    @org.springframework.web.bind.annotation.ExceptionHandler(org.springframework.dao.DataAccessException.class)
+    org.springframework.http.ProblemDetail libraryUnavailable() {
+        return org.springframework.http.ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE,
+                "A biblioteca está indisponível. Confira o servidor e tente novamente.");
     }
 
     @GetMapping("/storage")

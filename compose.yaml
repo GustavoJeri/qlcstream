@@ -83,6 +83,7 @@ services:
       QBT_LEGAL_NOTICE: confirm
       QBT_WEBUI_PORT: 8080
       QBT_TORRENTING_PORT: 6881
+      UMASK: "0002"
     stop_grace_period: 30m
     volumes:
       - ./data/qbittorrent-official:/config

@@ -94,14 +94,14 @@ class DownloadRegressionTest {
         var engine = new Engine(); var row = row();
         engine.snapshots = List.of(snapshot("downloading", .2, "/downloads/incoming/other"));
         new DownloadControlService(repository(row), engine).control(row.id(), DownloadControlService.Action.CANCEL);
-        assertEquals("REMOVED", row.status()); assertTrue(engine.commands.isEmpty());
+        assertEquals("CANCELED", row.status()); assertTrue(engine.commands.isEmpty());
     }
 
     @Test void cancelsOwnedTorrentBeforeMetadataIncludingTrailingSlash() {
         var engine = new Engine(); var row = row();
         engine.snapshots = List.of(snapshot("downloading", .2, "/downloads/incoming/test/"));
         new DownloadControlService(repository(row), engine).control(row.id(), DownloadControlService.Action.CANCEL);
-        assertEquals("REMOVED", row.status()); assertEquals(List.of("remove:hash"), engine.commands);
+        assertEquals("CANCELED", row.status()); assertEquals(List.of("remove:hash"), engine.commands);
     }
 
     @Test void repeatedCancelIsHarmless() {
@@ -316,12 +316,15 @@ class DownloadRegressionTest {
 
     @Test void recoversEngineTransferWithoutAddingAgainOrMovingFiles() throws Exception {
         try (var api = new ApiFixture()) {
-            api.infoBody = "[{\"hash\":\"hash\",\"name\":\"test-release\",\"state\":\"downloading\",\"progress\":0.25,\"size\":1000,\"downloaded\":250,\"dlspeed\":10,\"eta\":75,\"save_path\":\"/downloads/incoming/original\"}]";
+            var hash = "a".repeat(40);
+            api.infoBody = "[{\"hash\":\"" + hash + "\",\"name\":\"test-release\",\"state\":\"downloading\",\"progress\":0.25,\"size\":1000,\"downloaded\":250,\"dlspeed\":10,\"eta\":75,\"save_path\":\"/downloads/incoming/original\"}]";
             var saved = new ArrayList<DownloadRow>();
-            new DownloadSubmissionService(newRepository(saved), api.client(), null).submitSeries(newSeriesRequest());
+            new DownloadSubmissionService(newRepository(saved), api.client(), null).submitSeries(
+                    new DownloadSubmissionService.SeriesDownloadRequest(1, "Test", null, 1, 5,
+                            "test-release", "magnet:?xt=urn:btih:" + hash, null, 1080, null, null));
             assertEquals(1, saved.size());
             assertEquals("incoming/original", saved.getFirst().relativeDirectory());
-            assertEquals("hash", saved.getFirst().infoHash());
+            assertEquals(hash, saved.getFirst().infoHash());
             assertTrue(api.calls.stream().noneMatch(call -> call.contains("/torrents/add")));
         }
     }

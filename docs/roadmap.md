@@ -1,5 +1,7 @@
 # Evolução incremental do fork
 
+O trabalho conjunto no repositório original está organizado no [plano upstream #6](https://github.com/diegodinizm1/qlcstream/issues/6). Consulte o [mapa de continuidade](colaboracao-upstream.md) para os novos números e o histórico preservado. As entregas abaixo registram o estado do fork e não significam publicação em `main` do upstream.
+
 Objetivo: usar o QLC Stream com downloads confiáveis e reduzir a configuração manual do primeiro acesso. O projeto original e sua autoria são preservados; melhorias futuras podem ser propostas ao upstream em mudanças pequenas.
 
 ## Entregue — F00: confiabilidade dos downloads
@@ -51,10 +53,10 @@ Aceite: iniciar uma instalação já configurada não exige editar arquivos ou r
 
 ## F04: atualizações previsíveis
 
-- [ ] Definir versões suportadas das integrações e substituir imagens flutuantes por versões testadas (implementação da Issue #20 em revisão; matriz real documentada).
-- [ ] Executar testes e compilação automaticamente em cada alteração.
+- [x] Definir versões suportadas das integrações e substituir imagens flutuantes por versões testadas (Issue #20 integrada em `develop` pela PR #35).
+- [x] Executar testes e compilação automaticamente em cada alteração (Issue #14; CI ampliado nas Issues #19 a #21).
 - [ ] Validar instalação limpa e atualização com dados existentes.
-- [ ] Documentar cópia de segurança e recuperação antes de migrar dados.
+- [x] Documentar cópia de segurança e recuperação antes de migrar dados (Issue #21 integrada em `develop` pela PR #36).
 - [ ] Publicar versões identificáveis com notas de alteração.
 
 Aceite: cada versão publicada informa o que mudou, o que foi testado e como recuperar a instalação anterior.
@@ -74,4 +76,4 @@ Não publicar arquivos `.env`, credenciais, configurações pessoais dos serviç
 
 Contrato, limitações e validação com volumes próprios estão em [diagnóstico de armazenamento](diagnostico-armazenamento.md).
 
-A persistência das integrações da Issue #17 foi revisada e integrada em `develop` pela [PR #32](https://github.com/GustavoJeri/qlcstream/pull/32): [contrato, API e recuperação](configuracao-integracoes.md). O assistente da Issue #18 foi integrado pela PR #33: [fluxo, preservação e evidências](assistente-primeira-configuracao.md). O inicializador da Issue #19 foi integrado pela [PR #34](https://github.com/GustavoJeri/qlcstream/pull/34), com CI aprovado e Issue encerrada: [contrato, falhas e validação](inicializacao-windows.md). A Issue #20 continua o inventário `671246a` com [referências fixadas, matriz real e procedimento de promoção/recuperação](versoes-integracoes.md), em revisão antes de integrar. Publicação em `main` e atualização da instalação diária são etapas posteriores.
+A persistência das integrações da Issue #17 foi revisada e integrada em `develop` pela [PR #32](https://github.com/GustavoJeri/qlcstream/pull/32): [contrato, API e recuperação](configuracao-integracoes.md). O assistente da Issue #18 foi integrado pela PR #33: [fluxo, preservação e evidências](assistente-primeira-configuracao.md). O inicializador da Issue #19 foi integrado pela [PR #34](https://github.com/GustavoJeri/qlcstream/pull/34): [contrato, falhas e validação](inicializacao-windows.md). A Issue #20 foi integrada pela [PR #35](https://github.com/GustavoJeri/qlcstream/pull/35), em `aa18d2b`, após revisão e correção dos três achados: [referências, matriz e promoção/recuperação](versoes-integracoes.md). A Issue #21 foi integrada em `develop` pela [PR #36](https://github.com/GustavoJeri/qlcstream/pull/36), em `3c7e404`, após duas revisões: [backup e restauração isolada](backup-restauracao.md), com chave separada, perfis completos, mídia opcional e detecção de perdas sem autorreparo. O [CI pós-merge](https://github.com/GustavoJeri/qlcstream/actions/runs/43539592270) aprovou os cinco jobs. O próximo incremento é a Issue #22, com [inventário e proposta inicial de versões e atualização recuperável](versoes-atualizacao.md). Esse início não certifica uma release nem uma atualização entre versões. Publicação em `main` e atualização da instalação diária são etapas posteriores.
