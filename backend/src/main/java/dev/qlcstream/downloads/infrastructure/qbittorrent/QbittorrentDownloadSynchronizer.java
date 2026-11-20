@@ -60,13 +60,11 @@ public class QbittorrentDownloadSynchronizer {
             queueingEnabled = qbittorrent.queueingEnabled();
             nextPreferencesCheck = now.plusSeconds(30);
         }
-        var torrentsByHash = torrents.stream()
-                .filter(torrent -> torrent.hash() != null && !torrent.hash().isBlank())
-                .collect(Collectors.toMap(torrent -> torrent.hash().toLowerCase(java.util.Locale.ROOT),
-                        Function.identity(), (first, ignored) -> first));
+        var torrentsByHash = indexByHash(torrents);
         var torrentsByPath = torrents.stream()
                 .collect(Collectors.groupingBy(torrent -> normalizePath(torrent.savePath())));
         var changed = false;
+        java.util.Map<String, QbittorrentClient.TorrentSnapshot> postLockTorrentsByHash = null;
         for (var download : downloads.findByStatusNotIn(FINAL_STATUSES)) {
             var torrent = download.infoHash() == null ? null
                     : torrentsByHash.get(download.infoHash().toLowerCase(java.util.Locale.ROOT));
@@ -84,8 +82,26 @@ public class QbittorrentDownloadSynchronizer {
                         // Keep the intent and retry; never report removal from a failed command.
                     }
                 } else if (download.infoHash() != null && !download.infoHash().isBlank()) {
-                    download.markRemoved();
-                    changed = true;
+                    // Confirm absence strictly after acquiring row locks so a concurrent cancel+bind
+                    // cannot be marked REMOVED from a stale pre-lock engine snapshot.
+                    if (postLockTorrentsByHash == null) {
+                        try {
+                            postLockTorrentsByHash = indexByHash(qbittorrent.torrents());
+                        } catch (QbittorrentClient.QbittorrentUnavailableException unavailable) {
+                            continue;
+                        }
+                    }
+                    var confirmed = postLockTorrentsByHash.get(download.infoHash().toLowerCase(java.util.Locale.ROOT));
+                    if (confirmed != null) {
+                        try {
+                            qbittorrent.remove(confirmed.hash());
+                        } catch (QbittorrentClient.QbittorrentUnavailableException unavailable) {
+                            // Keep CANCELED and retry on the next cycle.
+                        }
+                    } else {
+                        download.markRemoved();
+                        changed = true;
+                    }
                 }
                 continue;
             }
@@ -135,6 +151,14 @@ public class QbittorrentDownloadSynchronizer {
     private void confirmSync(SyncStatus confirmed, boolean notify) {
         syncStatus = confirmed;
         if (notify) updates.publish();
+    }
+
+    private static java.util.Map<String, QbittorrentClient.TorrentSnapshot> indexByHash(
+            java.util.List<QbittorrentClient.TorrentSnapshot> torrents) {
+        return torrents.stream()
+                .filter(torrent -> torrent.hash() != null && !torrent.hash().isBlank())
+                .collect(Collectors.toMap(torrent -> torrent.hash().toLowerCase(java.util.Locale.ROOT),
+                        Function.identity(), (first, ignored) -> first));
     }
 
     private static String normalizePath(String path) {

@@ -183,4 +183,35 @@ class DownloadLifecycleTest {
         synchronizer.synchronize();
         assertEquals("REMOVED", row.status());
     }
+    @Test void synchronizerConfirmsTorrentAbsenceAfterLockBeforeMarkingRemoved() {
+        var row = DownloadRegressionTest.row();
+        var engine = new DownloadRegressionTest.Engine();
+        // Pre-lock snapshot is empty; during the window before row locks are acquired,
+        // the torrent appears in qBittorrent and a concurrent cancel persists CANCELED + hash even after remove fails.
+        engine.snapshots = List.of();
+        var baseRepo = DownloadRegressionTest.repository(row);
+        var interleaved = new boolean[]{false};
+        var repo = (SpringDataDownloadRepository) java.lang.reflect.Proxy.newProxyInstance(
+                DownloadLifecycleTest.class.getClassLoader(),
+                new Class<?>[]{SpringDataDownloadRepository.class},
+                (proxy, method, args) -> {
+                    if ("findByStatusNotIn".equals(method.getName()) && !interleaved[0]) {
+                        interleaved[0] = true;
+                        engine.snapshots = List.of(DownloadRegressionTest.snapshot("downloading", 0.5, "/downloads/incoming/test"));
+                        row.bindHash("hash");
+                        row.markStatus("CANCELED");
+                    }
+                    return method.invoke(baseRepo, args);
+                });
+        var synchronizer = new QbittorrentDownloadSynchronizer(repo, engine, null, new DownloadUpdatePublisher());
+
+        synchronizer.synchronize();
+        assertEquals("CANCELED", row.status(), "Stale pre-lock snapshot must never mark an active torrent REMOVED");
+        assertEquals(List.of("remove:hash"), engine.commands);
+        assertFalse(new DownloadControlService(repo, engine).cancelForFileDeletion(row.id()));
+
+        engine.snapshots = List.of();
+        synchronizer.synchronize();
+        assertEquals("REMOVED", row.status());
+    }
 }
