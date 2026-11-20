@@ -18,7 +18,7 @@ public class DownloadControlService {
         this.qbittorrent = qbittorrent;
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = QbittorrentClient.QbittorrentUnavailableException.class)
     public void control(UUID id, Action action) {
         var download = downloads.findById(id).orElseThrow(() -> new IllegalArgumentException("Download não encontrado."));
         if ("REMOVED".equals(download.status()) || "CANCELED".equals(download.status())) return;
@@ -48,9 +48,9 @@ public class DownloadControlService {
             case PRIORITY_UP -> qbittorrent.increasePriority(hash);
             case PRIORITY_DOWN -> qbittorrent.decreasePriority(hash);
             case CANCEL -> {
-                qbittorrent.remove(hash);
                 download.bindHash(hash);
                 download.markStatus("CANCELED");
+                qbittorrent.remove(hash);
             }
         }
     }
@@ -68,8 +68,8 @@ public class DownloadControlService {
             if (!alreadyCanceled) return false;
             hash = qbittorrent.hashForSavePath("/downloads/" + download.relativeDirectory());
             if (hash == null || hash.isBlank()) return false;
-            qbittorrent.remove(hash);
             download.bindHash(hash);
+            qbittorrent.remove(hash);
             alreadyCanceled = false;
         }
         var currentHash = hash;

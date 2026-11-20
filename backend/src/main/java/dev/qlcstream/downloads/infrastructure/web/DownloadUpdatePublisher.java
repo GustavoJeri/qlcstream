@@ -14,10 +14,11 @@ public class DownloadUpdatePublisher {
         var emitter = new SseEmitter(0L);
         emitter.onCompletion(() -> emitters.remove(emitter));
         emitter.onTimeout(() -> emitters.remove(emitter));
+        emitter.onError(ignored -> emitters.remove(emitter));
         emitters.add(emitter);
         try {
             emitter.send(SseEmitter.event().name("connected").data("ready"));
-        } catch (IOException exception) {
+        } catch (IOException | IllegalStateException exception) {
             emitters.remove(emitter);
         }
         return emitter;
@@ -27,7 +28,7 @@ public class DownloadUpdatePublisher {
         for (var emitter : emitters) {
             try {
                 emitter.send(SseEmitter.event().name("downloads-changed").data("updated"));
-            } catch (IOException exception) {
+            } catch (IOException | IllegalStateException exception) {
                 emitters.remove(emitter);
             }
         }
@@ -38,7 +39,7 @@ public class DownloadUpdatePublisher {
         for (var emitter : emitters) {
             try {
                 emitter.send(SseEmitter.event().name("download-notification").data(notification));
-            } catch (IOException exception) {
+            } catch (IOException | IllegalStateException exception) {
                 emitters.remove(emitter);
             }
         }

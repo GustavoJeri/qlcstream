@@ -61,12 +61,15 @@ public class QbittorrentDownloadSynchronizer {
             nextPreferencesCheck = now.plusSeconds(30);
         }
         var torrentsByHash = torrents.stream()
-                .collect(Collectors.toMap(QbittorrentClient.TorrentSnapshot::hash, Function.identity(), (first, ignored) -> first));
+                .filter(torrent -> torrent.hash() != null && !torrent.hash().isBlank())
+                .collect(Collectors.toMap(torrent -> torrent.hash().toLowerCase(java.util.Locale.ROOT),
+                        Function.identity(), (first, ignored) -> first));
         var torrentsByPath = torrents.stream()
                 .collect(Collectors.groupingBy(torrent -> normalizePath(torrent.savePath())));
         var changed = false;
         for (var download : downloads.findByStatusNotIn(FINAL_STATUSES)) {
-            var torrent = download.infoHash() == null ? null : torrentsByHash.get(download.infoHash());
+            var torrent = download.infoHash() == null ? null
+                    : torrentsByHash.get(download.infoHash().toLowerCase(java.util.Locale.ROOT));
             // A known identity must never be replaced just because a folder was reused.
             if (download.infoHash() == null || download.infoHash().isBlank()) {
                 var matches = torrentsByPath.getOrDefault(normalizePath("/downloads/" + download.relativeDirectory()), java.util.List.of());
@@ -74,9 +77,9 @@ public class QbittorrentDownloadSynchronizer {
             }
             if ("CANCELED".equals(download.status())) {
                 if (torrent != null) {
+                    download.bindHash(torrent.hash());
                     try {
                         qbittorrent.remove(torrent.hash());
-                        download.bindHash(torrent.hash());
                     } catch (QbittorrentClient.QbittorrentUnavailableException unavailable) {
                         // Keep the intent and retry; never report removal from a failed command.
                     }

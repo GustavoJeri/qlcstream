@@ -114,4 +114,73 @@ class DownloadLifecycleTest {
         assertEquals("CANCELED", row.status());
         assertEquals(List.of("remove:hash"), engine.commands);
     }
+    @Test void cancelForFileDeletionBindsHashBeforeRemoveSoLostRemovalResponseCanRetry() throws Exception {
+        var controlTx = DownloadControlService.class
+                .getMethod("control", UUID.class, DownloadControlService.Action.class)
+                .getAnnotation(org.springframework.transaction.annotation.Transactional.class);
+        assertNotNull(controlTx);
+        assertTrue(Arrays.asList(controlTx.noRollbackFor())
+                .contains(QbittorrentClient.QbittorrentUnavailableException.class));
+
+        // Scenario 1: already CANCELED without hash; engine deletes torrent but loses the HTTP response.
+        var canceledRow = DownloadRegressionTest.row();
+        canceledRow.markStatus("CANCELED");
+        var lostRemoveEngine = new DownloadRegressionTest.Engine() {
+            @Override public void remove(String hash) {
+                super.remove(hash);
+                snapshots = List.of();
+                new QbittorrentClient(
+                        new dev.qlcstream.downloads.config.DownloadQbittorrentProperties("", "", ""), null).torrents();
+            }
+        };
+        lostRemoveEngine.snapshots = List.of(DownloadRegressionTest.snapshot("seeding", 1.0, "/downloads/incoming/test"));
+        var canceledService = new DownloadControlService(DownloadRegressionTest.repository(canceledRow), lostRemoveEngine);
+        assertThrows(QbittorrentClient.QbittorrentUnavailableException.class,
+                () -> canceledService.cancelForFileDeletion(canceledRow.id()));
+        assertEquals("hash", canceledRow.infoHash());
+        assertEquals("CANCELED", canceledRow.status());
+        assertTrue(canceledService.cancelForFileDeletion(canceledRow.id()));
+        assertEquals("REMOVED", canceledRow.status());
+
+        // Scenario 2: active download without hash; initial CANCEL removes torrent and loses response.
+        var activeRow = DownloadRegressionTest.row();
+        var activeEngine = new DownloadRegressionTest.Engine() {
+            @Override public void remove(String hash) {
+                super.remove(hash);
+                snapshots = List.of();
+                new QbittorrentClient(
+                        new dev.qlcstream.downloads.config.DownloadQbittorrentProperties("", "", ""), null).torrents();
+            }
+        };
+        activeEngine.snapshots = List.of(DownloadRegressionTest.snapshot("seeding", 1.0, "/downloads/incoming/test"));
+        var activeService = new DownloadControlService(DownloadRegressionTest.repository(activeRow), activeEngine);
+        assertThrows(QbittorrentClient.QbittorrentUnavailableException.class,
+                () -> activeService.cancelForFileDeletion(activeRow.id()));
+        assertEquals("hash", activeRow.infoHash());
+        assertEquals("CANCELED", activeRow.status());
+        assertTrue(activeService.cancelForFileDeletion(activeRow.id()));
+        assertEquals("REMOVED", activeRow.status());
+    }
+    @Test void synchronizerBindsHashBeforeRemoveSoLostRemovalResponseCompletesOnNextCycle() {
+        var row = DownloadRegressionTest.row();
+        row.markStatus("CANCELED");
+        var engine = new DownloadRegressionTest.Engine() {
+            @Override public void remove(String hash) {
+                super.remove(hash);
+                snapshots = List.of();
+                new QbittorrentClient(
+                        new dev.qlcstream.downloads.config.DownloadQbittorrentProperties("", "", ""), null).torrents();
+            }
+        };
+        engine.snapshots = List.of(DownloadRegressionTest.snapshot("downloading", 0.5, "/downloads/incoming/test"));
+        var synchronizer = new QbittorrentDownloadSynchronizer(
+                DownloadRegressionTest.repository(row), engine, null, new DownloadUpdatePublisher());
+
+        synchronizer.synchronize();
+        assertEquals("hash", row.infoHash());
+        assertEquals("CANCELED", row.status());
+
+        synchronizer.synchronize();
+        assertEquals("REMOVED", row.status());
+    }
 }

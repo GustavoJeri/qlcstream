@@ -22,7 +22,11 @@ class LibraryTransferAdapter implements LibraryTransferControl {
                 | java.util.NoSuchElementException failure) {
             throw new LibraryTransferControl.Unavailable();
         } finally {
-            updates.publish();
+            try {
+                updates.publish();
+            } catch (RuntimeException ignored) {
+                // SSE updates are best-effort and must never mask the deletion result or failure.
+            }
         }
     }
 }
