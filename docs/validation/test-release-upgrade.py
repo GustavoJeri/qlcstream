@@ -278,7 +278,7 @@ def main():
         active_override = override_v1
 
         compose(override_v1, 'run', '--rm', '--no-deps', 'prepare')
-        compose(override_v1, 'up', '-d', '--no-build', '--pull', 'never',
+        compose(override_v1, 'up', '-d', '--no-build', '--pull', 'missing',
                 'database', 'backend', 'frontend', 'prowlarr', 'qbittorrent', 'source')
         run_fixture(override_v1, 'prepare')
         db = b.inspect('container', compose(override_v1, 'ps', '-q', 'database').decode().strip())
