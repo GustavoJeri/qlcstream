@@ -33,6 +33,29 @@ jobs:
         run: python3 docs/validation/test-backup-restore.py
       # No uploads: packages, keys, database/profile snapshots stay private to runner.
 
+  release-package:
+    name: Release package
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Validar contrato do empacotamento e integridade sem Git
+        run: python3 docs/validation/test-release-package.py
+      - name: Construir ferramenta de backup para ensaio de atualizacao
+        run: docker build -t qlcstream-backup-helper:1 scripts/backup
+      - name: Ensaiar instalacao limpa atualizacao e recuperacao isoladas
+        run: python3 docs/validation/test-release-upgrade.py
+      - name: Guardar resumo sintetico da validacao de release
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-validation-results
+          path: data/release-validation-*/result.json
+          if-no-files-found: ignore
+          retention-days: 7
+
   integration-versions:
     name: Integration versions
     runs-on: ubuntu-latest

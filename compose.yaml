@@ -29,6 +29,9 @@ services:
     group_add: ["1000"]
     build:
       context: ./backend
+      args:
+        QLCSTREAM_VERSION: ${QLCSTREAM_VERSION:-0.1.0-rc.1}
+        QLCSTREAM_COMMIT: ${QLCSTREAM_COMMIT:-unknown}
     environment:
       DB_URL: jdbc:postgresql://database:5432/${POSTGRES_DB:-qlc_stream}
       DB_USER: ${POSTGRES_USER:-qlc_stream}
@@ -59,6 +62,9 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        QLCSTREAM_VERSION: ${QLCSTREAM_VERSION:-0.1.0-rc.1}
+        QLCSTREAM_COMMIT: ${QLCSTREAM_COMMIT:-unknown}
     ports:
       - "127.0.0.1:4200:80"
     depends_on:

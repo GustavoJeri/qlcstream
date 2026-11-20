@@ -1,5 +1,17 @@
 # Histórico deste fork
 
+## 0.1.0-rc.1 (candidata) — Versões identificadas e atualização recuperável
+
+Release candidata preparada a partir de `integration/qlcstream` (`V12`), sem tag pública nem publicação automática em `main`. Notas completas, matriz fixada e instruções de instalação limpa, atualização e recuperação em [docs/releases/0.1.0-rc.1.md](docs/releases/0.1.0-rc.1.md).
+
+### Novidades
+
+- Identidade unificada de versão em `VERSION` e `backend/src/main/resources/release-metadata.properties`, exposta sem cache em `/api/system/status` e exibida na tela **Configurações**, sem consultar `.git`.
+- Rótulos OCI (`org.opencontainers.image.version` e `org.opencontainers.image.revision`) nos Dockerfiles de `backend` e `frontend`.
+- Empacotamento reproduzível (`scripts/qlc-release.py`) com lista explícita de arquivos, manifesto público `RELEASE-MANIFEST.json`, verificação SHA-256, bloqueio de segredos/arquivos privados e aplicação administrativa (`apply`) que preserva `.env` e `data/`.
+- Suporte de `scripts/qlc-backup.py` a instalações extraídas de pacote sem `.git`, validando integralmente o `RELEASE-MANIFEST.json` contra os arquivos de execução em disco.
+- Ensaio isolado automatizado (`docs/validation/test-release-upgrade.py`) cobrindo instalação limpa de pacote, backup sem `.git`, atualização controlada, recusa de restore incompatível e recuperação após falha.
+
 ## 2026-11-12 — Confiabilidade dos downloads
 
 Primeiro incremento sobre `diegodinizm1/qlcstream`, commit `27d9065015c47615c25be2d1ae60b82d5c39f4a6`.

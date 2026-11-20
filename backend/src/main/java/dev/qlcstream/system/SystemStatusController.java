@@ -16,17 +16,26 @@ import org.springframework.http.ResponseEntity;
 class SystemStatusController {
 
     private final IntegrationDiagnostics diagnostics;
+    private final ReleaseMetadata releaseMetadata;
 
-    SystemStatusController(IntegrationDiagnostics diagnostics) {
+    SystemStatusController(IntegrationDiagnostics diagnostics, ReleaseMetadata releaseMetadata) {
         this.diagnostics = diagnostics;
+        this.releaseMetadata = releaseMetadata;
     }
 
     @GetMapping("/status")
-    Map<String, Object> status() {
-        return Map.of(
-                "application", "QLC Stream",
-                "status", "ready",
-                "timestamp", Instant.now());
+    ResponseEntity<Map<String, Object>> status() {
+        ReleaseMetadata.Info release = releaseMetadata.info();
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(Map.of(
+                        "application", "QLC Stream",
+                        "status", "ready",
+                        "version", release.version(),
+                        "channel", release.channel(),
+                        "schemaVersion", release.schemaVersion(),
+                        "commit", release.commit(),
+                        "timestamp", Instant.now()));
     }
 
     @GetMapping("/integrations")

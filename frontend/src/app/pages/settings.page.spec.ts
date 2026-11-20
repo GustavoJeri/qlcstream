@@ -10,11 +10,24 @@ describe('SettingsPage diagnostics', () => {
     id, configured: true, status, reason, checkedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 60000).toISOString(), retryAfter: null,
   }));
-  let api: { integrations: ReturnType<typeof vi.fn>; checkIntegrations: ReturnType<typeof vi.fn>; checkStorage: ReturnType<typeof vi.fn> };
+  let api: {
+    status: ReturnType<typeof vi.fn>;
+    integrations: ReturnType<typeof vi.fn>;
+    checkIntegrations: ReturnType<typeof vi.fn>;
+    checkStorage: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(() => {
     vi.useFakeTimers();
-    api = { checkStorage: vi.fn(() => of({ status: 'inconclusive', backend: 'read_write_verified', mapping: 'compatible_unproven', sharedDirectoryVerified: false, checkedAt: new Date().toISOString() })), integrations: vi.fn(() => of(results())), checkIntegrations: vi.fn(() => of(results())) };
+    api = {
+      status: vi.fn(() => of({
+        application: 'QLC Stream', status: 'ready', version: '0.1.0-rc.1', channel: 'candidate',
+        schemaVersion: 'V12', commit: '0123456789abcdef0123456789abcdef01234567', timestamp: new Date().toISOString(),
+      })),
+      checkStorage: vi.fn(() => of({ status: 'inconclusive', backend: 'read_write_verified', mapping: 'compatible_unproven', sharedDirectoryVerified: false, checkedAt: new Date().toISOString() })),
+      integrations: vi.fn(() => of(results())),
+      checkIntegrations: vi.fn(() => of(results())),
+    };
     TestBed.configureTestingModule({ providers: [
       { provide: SystemApiService, useValue: api },
       { provide: LibraryApiService, useValue: { storage: () => of({ downloadDirectory: 'incoming' }) } },
@@ -114,5 +127,17 @@ describe('SettingsPage diagnostics', () => {
       page.integrations.set(results('unavailable', reason));
       expect(page.connectionHelp('tmdb')).not.toContain('Ainda não há');
     }
+  });
+
+  it('displays installed release version and degrades cleanly when status fails', () => {
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Versão instalada: 0.1.0-rc.1 (candidata) · Esquema V12 · 0123456');
+
+    api.status.mockReturnValue(throwError(() => new Error('private-error')));
+    fixture.componentInstance.loadStatus();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Versão instalada: indisponível no momento.');
+    expect(fixture.nativeElement.textContent).not.toContain('private-error');
   });
 });

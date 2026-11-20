@@ -128,7 +128,7 @@ class IntegrationDiagnosticsTest {
         mode.set("unauthorized");
         var service = new IntegrationDiagnostics(probe());
         try {
-            var mvc = MockMvcBuilders.standaloneSetup(new SystemStatusController(service)).build();
+            var mvc = MockMvcBuilders.standaloneSetup(new SystemStatusController(service, new ReleaseMetadata(""))).build();
             var initial = mvc.perform(get("/api/system/integrations")).andReturn().getResponse();
             assertEquals(200, initial.getStatus());
             assertEquals("no-store", initial.getHeader("Cache-Control"));

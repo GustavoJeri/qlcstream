@@ -44,10 +44,85 @@ Ainda não há release pública anterior listada para servir como origem de um t
 
 ## Pendências desta investigação
 
-- Definir a origem de versão e o inventário permitido do pacote, incluindo o tratamento do scaffold Tauri.
-- Definir como o manifesto de distribuição substitui a dependência de `.git` sem enfraquecer a identificação/compatibilidade do backup.
-- Escolher e ensaiar a base de atualização suportada e a candidata.
-- Implementar empacotamento, identificação em execução, verificações de integridade e roteiro de recuperação.
-- Preparar e revisar uma PR própria da implementação. A Issue #22 permanece aberta; publicação de release, promoção de `main` e atualização diária continuam pendentes.
+As pendências registradas na investigação inicial de 13/11/2026 foram implementadas abaixo na entrega da Issue #2 (`[F04.3]`). A criação de tag pública, publicação em `main` e atualização da instalação diária continuam decisões administrativas explícitas, fora da automação desta PR.
 
-Referências de contexto já disponíveis: [Issue #22](https://github.com/GustavoJeri/qlcstream/issues/22), [plano #26](https://github.com/GustavoJeri/qlcstream/issues/26), [matriz das integrações](versoes-integracoes.md), [backup/restauração](backup-restauracao.md) e [inicializador Windows](inicializacao-windows.md).
+## Contrato implementado — Issue #2 (`[F04.3]`)
+
+### 1. Identidade de versão sem Git
+
+- A versão pública única reside em `VERSION` (formato SemVer 2.0.0: `MAJOR.MINOR.PATCH` para versão final e sufixo `-rc.N` para candidata; candidata inicial: `0.1.0-rc.1`).
+- `backend/src/main/resources/release-metadata.properties` armazena `qlcstream.release.version`, `qlcstream.release.channel` (`candidate` ou `release`) e `qlcstream.release.schema-version` (`V12`), mantidos em consistência com `VERSION`, com a maior migração Flyway em `backend/src/main/resources/db/migration/` e com os valores padrão `QLCSTREAM_VERSION` de `backend/Dockerfile`, `frontend/Dockerfile` e `compose.yaml`.
+- Os números de scaffold (`backend/pom.xml`, `frontend/package.json` e `frontend/src-tauri/*`) permanecem separados da versão pública. O canal desktop Tauri (`frontend/src-tauri`) permanece fora do pacote Docker/Windows.
+- Em execução, `GET /api/system/status` (com `Cache-Control: no-store`) retorna `application`, `status`, `version`, `channel`, `schemaVersion`, `commit` e `timestamp`. A página **Configurações** exibe essa versão sem exigir acesso ao Git.
+- Os Dockerfiles de `backend` e `frontend` gravam os rótulos OCI `org.opencontainers.image.version` e `org.opencontainers.image.revision` (com `QLCSTREAM_RELEASE_COMMIT` sanitizado para SHA-1 hexadecimal de 40 caracteres ou `unknown`).
+- Em disco (com ou sem `.git`), `python scripts/qlc-release.py inspect` informa versão, canal, esquema, commit, origem (`release-package` ou `git-checkout`) e matriz das integrações fixadas.
+
+### 2. Empacotamento reproduzível e manifesto público
+
+`scripts/qlc-release.py` usa Python 3.12+ apenas com a biblioteca padrão, sem instalar pacotes no host e sem ler `.env` ou `data/`.
+
+```powershell
+python scripts/qlc-release.py package --output data/release-out
+python scripts/qlc-release.py verify --package data/release-out/qlcstream-0.1.0-rc.1.zip --checksums data/release-out/qlcstream-0.1.0-rc.1.sha256
+```
+
+- O empacotamento exige árvore Git limpa por padrão (flag `--allow-dirty` existe apenas para ensaios locais antes de commit).
+- Os arquivos incluídos vêm de uma **lista explícita de permissão**: arquivos operacionais da raiz, `scripts/`, documentação operacional e `docs/releases/<versao>.md`, além dos arquivos de execução de `backend/` e `frontend/` (excluindo `backend/src/test/`, `frontend/src-tauri/` e `frontend/**/*.spec.ts`).
+- São explicitamente recusados: `.git`, `.env`, `data/`, `docs/validation/`, `frontend/src-tauri/`, testes unitários, caches (`target/`, `node_modules/`, `dist/`, `.angular/`, `__pycache__/`), links simbólicos, `.key`, `.pem`, `.dump`, `.db`, `.sqlite*`, `.log` e padrões de segredos (chaves privadas PEM, tokens JWT/Bearer ou valores preenchidos em `.env.example`).
+- O arquivo ZIP usa ordenação determinística, permissões normalizadas e carimbo de data derivado do timestamp UTC do commit, produzindo hashes SHA-256 idênticos em duas gerações consecutivas do mesmo commit.
+- São gerados três artefatos públicos sem segredos:
+  1. `qlcstream-<versao>.zip` (contendo `RELEASE-MANIFEST.json` na raiz interna);
+  2. `qlcstream-<versao>.manifest.json` (manifesto público com versão, canal, esquema, commit, matriz das imagens fixadas, hashes SHA-256 de todos os arquivos e mapa `compatibility`);
+  3. `qlcstream-<versao>.sha256` (checksums SHA-256 do ZIP e do manifesto).
+
+### 3. Compatibilidade do backup em instalações extraídas de pacote (sem `.git`)
+
+`scripts/qlc-backup.py` foi atualizado para identificar a origem sem depender de `.git` nem de `git` instalado:
+
+- Quando `RELEASE-MANIFEST.json` está presente na raiz, o backup valida integralmente o formato do manifesto, os hashes SHA-256 de todos os arquivos declarados em disco, a ausência de links simbólicos e a ausência de arquivos de execução extras não declarados sob `backend/` e `frontend/` (por exemplo, uma migração Flyway extra ou arquivo alterado). Se houver divergência, falha fechada com `MANIFESTO_INVALIDO`.
+- O mapa `compatibility` e o `commit` vêm do manifesto validado (equivalente ao conjunto de execução do checkout Git) e o manifesto privado de backup (formato 1) passa a registrar também `releaseVersion`.
+- Quando nem `RELEASE-MANIFEST.json` nem `.git` existem, o comando recusa a operação com `ORIGEM_NAO_IDENTIFICADA`.
+
+### 4. Instalação limpa, atualização administrativa e recuperação
+
+Os passos detalhados constam nas notas da candidata em [docs/releases/0.1.0-rc.1.md](releases/0.1.0-rc.1.md). Resumo dos limites:
+
+- **Instalação limpa:** verificar ZIP + `.sha256` com `qlc-release.py verify`, extrair em pasta nova vazia, confirmar com `qlc-release.py verify-dir` e `inspect`, iniciar com `iniciar-qlcstream.bat` (ou `docker compose up -d --build` após preparar `.env`).
+- **Uso diário:** `iniciar-qlcstream.bat` continua preservando `.env`, contêineres e imagens (`--no-build --no-recreate`), sem atualizar versões implicitamente.
+- **Atualização administrativa:**
+  1. Preservar uma cópia da pasta/pacote da versão anterior e dos IDs das imagens locais atuais.
+  2. Parar normalmente os escritores (`docker compose stop --timeout 1800 frontend backend prowlarr qbittorrent`).
+  3. Executar e verificar backup consistente (`qlc-backup.py backup` + `verify`).
+  4. Verificar o novo pacote e aplicá-lo sobre a pasta extraída com `python scripts/qlc-release.py apply --package <zip> --checksums <sha256> --target <pasta>` (recusa repositórios `.git`, preserva `.env` e `data/`, remove arquivos obsoletos apenas do manifesto anterior e valida a pasta resultante com `verify-dir`).
+  5. Reconstruir explicitamente `backend` e `frontend` com `--build-arg QLCSTREAM_VERSION=... --build-arg QLCSTREAM_COMMIT=...` e recriar somente esses serviços (`docker compose up -d --no-build --force-recreate backend frontend` + `docker compose start prowlarr qbittorrent`).
+  6. Conferir `/actuator/health`, `/api/system/status`, `scripts/check-integration-versions.py` e os dados preservados.
+- **Recuperação após falha:** não usar `flyway repair`, `baseline`, troca de chave ou `down -v`. Restaurar o backup pré-atualização em um destino novo e isolado usando a pasta/pacote **da versão anterior preservada** e as imagens locais anteriores com `qlc-backup.py restore`. Tentar restaurar o backup da versão anterior usando o pacote da versão nova é recusado antes de criar volumes (`VERSAO_ESQUEMA_INCOMPATIVEL`).
+
+## Validação reproduzível
+
+```powershell
+# Contratos sem Docker (reprodutibilidade, segredos, apply seguro e backup sem .git)
+python docs/validation/test-release-package.py
+python docs/validation/test-backup-command.py
+
+# Ensaio isolado completo com Docker (instalação limpa de pacote, backup sem .git, atualização v1 -> v2, falha controlada e recuperação v1)
+docker build -t qlcstream-backup-helper:1 scripts/backup
+python docs/validation/test-release-upgrade.py
+```
+
+O roteiro `docs/validation/test-release-upgrade.py` cria projeto e volumes sintéticos aleatórios em rede Docker interna sem portas publicadas, empacota a candidata atual e uma candidata sintética seguinte (`V12`), ensaia instalação limpa a partir do ZIP extraído sem `.git`, executa backup pré-atualização sem `.git`, aplica a atualização preservando `.env`, `data/`, banco, chave, configurações gerenciadas, indexador Prowlarr, metadados do qBittorrent e mídia própria, confirma recusa de restore incompatível pela versão nova e, após falha controlada pós-atualização, recupera integralmente o estado anterior usando o pacote preservado sem `.git`. Apenas o resumo sintético sem segredos vai para `data/release-validation-*/result.json` (ignorado pelo Git).
+
+## Evidências locais — 19/11/2026
+
+- **Backend (`./mvnw verify`):** 87 testes executados, 0 falhas, 0 erros (7 testes POSIX ignorados no Windows), incluindo `ApplicationModulesTest` e 3 testes novos em `SystemStatusControllerTest` (contrato `/api/system/status` com `no-store`, consistência entre `VERSION`, `release-metadata.properties` e migração `V12`, e sanitização de `QLCSTREAM_RELEASE_COMMIT`).
+- **Frontend (Node 26 em contêiner `node:26-alpine`):** 12 arquivos de teste, 50 testes aprovados e build de produção concluído sem novos avisos.
+- **Contratos sem Docker:** `test-release-package.py` (4 testes: reprodutibilidade bit a bit do ZIP/manifesto, bloqueio de arquivos proibidos/segredos, `inspect`/`verify-dir`/backup sem `.git`, `apply` preservando `.env` e `data/`, recusa de árvore suja e diretórios não gerenciados; 1 teste POSIX de symlinks ignorado no Windows e executado no CI Linux), `test-backup-command.py` (10 testes aprovados integralmente em Linux POSIX; 9 aprovados e 1 POSIX ignorado no Windows), `test-backup-package.py` em Linux (5 testes aprovados), `test-version-checker.py` (4 testes aprovados) e `Test-WindowsLauncher.ps1` (83 assertivas aprovadas).
+- **Ensaio isolado real no Docker (`test-release-upgrade.py`, execução `685121de89`, Docker Engine 29.8.0):**
+  - Empacotamento e verificação da candidata `0.1.0-rc.1` (sem `.git`/`.env`/`data/`/`src-tauri`/`validation`).
+  - Instalação limpa a partir do pacote extraído sem `.git`, rótulos OCI conferidos nas imagens de backend/frontend, interface Nginx (`<app-root>`) + `/api/system/status` confirmando `0.1.0-rc.1`, canal `candidate`, esquema `V12` e commit, e `scripts/check-integration-versions.py` empacotado confirmando Prowlarr e qBittorrent fixados.
+  - Backup pré-atualização com mídia e `verify` executados a partir da pasta extraída sem `.git`.
+  - Atualização administrativa `0.1.0-rc.1` → `0.1.0-rc.2` (candidata sintética `V12`) preservando `.env`, `data/`, registros do banco, chave original, configurações gerenciadas cifradas, indexador Prowlarr, metadados do qBittorrent e bytes de mídia.
+  - Recusa da restauração do backup `0.1.0-rc.1` pelo pacote `0.1.0-rc.2` antes da criação de qualquer volume (`VERSAO_ESQUEMA_INCOMPATIVEL`).
+  - Falha controlada pós-atualização recuperada integralmente para `0.1.0-rc.1` em destino isolado novo usando o pacote preservado sem `.git` e as imagens anteriores. Evidência sintética local em `data/release-validation-685121de89/result.json` (ignorada pelo Git).
+
+Referências: [Issue #2 (upstream)](https://github.com/diegodinizm1/qlcstream/issues/2), [Issue #22 (fork)](https://github.com/GustavoJeri/qlcstream/issues/22), [notas da candidata 0.1.0-rc.1](releases/0.1.0-rc.1.md), [matriz das integrações](versoes-integracoes.md), [backup/restauração](backup-restauracao.md) e [inicializador Windows](inicializacao-windows.md).

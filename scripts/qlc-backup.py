@@ -22,6 +22,10 @@ HELPER = 'qlcstream-backup-helper:1'
 SERVICES = ('database', 'backend', 'frontend', 'prowlarr', 'qbittorrent')
 MOUNTS = {'prowlarr': ('prowlarr', '/config'), 'qbittorrent': ('qbittorrent', '/config'),
           'keys': ('backend', '/run/qlcstream-secrets'), 'media': ('backend', '/data')}
+LOCAL_BUILD_CACHE_PREFIXES = ('backend/target/', 'frontend/node_modules/', 'frontend/dist/', 'frontend/.angular/')
+SEMVER_RE = re.compile(r'^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$')
+SHA40_RE = re.compile(r'^[0-9a-f]{40}$')
+SHA64_RE = re.compile(r'^[0-9a-f]{64}$')
 
 
 def require(condition, code):
@@ -60,12 +64,100 @@ def exists(kind, name):
     return docker(kind, 'inspect', name, allow_failure=True).returncode == 0
 
 
+def is_runtime_compatibility_path(rel_posix):
+    if not (rel_posix.startswith('backend/') or rel_posix.startswith('frontend/')):
+        return False
+    if '/src/test/' in rel_posix or rel_posix.startswith('backend/src/test/'):
+        return False
+    if rel_posix.startswith('frontend/src-tauri/'):
+        return False
+    if rel_posix.endswith('.spec.ts'):
+        return False
+    return True
+
+
+def load_release_manifest(root=None):
+    base = Path(root) if root is not None else ROOT
+    manifest_path = base / 'RELEASE-MANIFEST.json'
+    require(manifest_path.is_file() and not manifest_path.is_symlink(), 'MANIFESTO_INVALIDO')
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+    except Exception:
+        raise ValueError('MANIFESTO_INVALIDO') from None
+    require(isinstance(manifest, dict) and manifest.get('format') == 1, 'MANIFESTO_INVALIDO')
+    version = manifest.get('version')
+    commit = manifest.get('commit')
+    files = manifest.get('files')
+    compat = manifest.get('compatibility')
+    require(isinstance(version, str) and SEMVER_RE.fullmatch(version) is not None, 'MANIFESTO_INVALIDO')
+    require(isinstance(commit, str) and SHA40_RE.fullmatch(commit) is not None, 'MANIFESTO_INVALIDO')
+    require(isinstance(files, dict) and len(files) > 0, 'MANIFESTO_INVALIDO')
+    require(isinstance(compat, dict) and len(compat) > 0, 'MANIFESTO_INVALIDO')
+    for rel, expected_sha in files.items():
+        require(isinstance(rel, str) and bool(rel) and '\\' not in rel and ':' not in rel and '\0' not in rel,
+                'MANIFESTO_INVALIDO')
+        p = PurePosixPath(rel)
+        require(not p.is_absolute() and '..' not in p.parts and '.' not in p.parts and p.as_posix() == rel,
+                'MANIFESTO_INVALIDO')
+        require(isinstance(expected_sha, str) and SHA64_RE.fullmatch(expected_sha) is not None, 'MANIFESTO_INVALIDO')
+        full = base / rel
+        require(full.is_file() and not full.is_symlink(), 'MANIFESTO_INVALIDO')
+        current = full.parent
+        while current != base:
+            require(not current.is_symlink(), 'MANIFESTO_INVALIDO')
+            current = current.parent
+        require(hashlib.sha256(full.read_bytes()).hexdigest() == expected_sha, 'MANIFESTO_INVALIDO')
+    expected_compat = {rel: digest for rel, digest in files.items() if is_runtime_compatibility_path(rel)}
+    require(compat == expected_compat, 'MANIFESTO_INVALIDO')
+    # Reject unmanifested runtime files (for example, an added migration or altered source file).
+    observed_runtime = set()
+    for top in ('backend', 'frontend'):
+        top_dir = base / top
+        require(top_dir.is_dir() and not top_dir.is_symlink(), 'MANIFESTO_INVALIDO')
+        for dirpath, dirnames, filenames in os.walk(top_dir, followlinks=False):
+            rel_dir = Path(dirpath).relative_to(base).as_posix()
+            kept = []
+            for d in dirnames:
+                require(not (Path(dirpath) / d).is_symlink(), 'MANIFESTO_INVALIDO')
+                rel_child = f'{rel_dir}/{d}/'
+                if d == '__pycache__' or any(rel_child.startswith(prefix) for prefix in LOCAL_BUILD_CACHE_PREFIXES):
+                    continue
+                kept.append(d)
+            dirnames[:] = kept
+            for fname in filenames:
+                require(not (Path(dirpath) / fname).is_symlink(), 'MANIFESTO_INVALIDO')
+                rel_posix = f'{rel_dir}/{fname}'
+                require(is_runtime_compatibility_path(rel_posix), 'MANIFESTO_INVALIDO')
+                observed_runtime.add(rel_posix)
+    require(observed_runtime == set(compat), 'MANIFESTO_INVALIDO')
+    return manifest
+
+
+def source_identity(root=None):
+    base = Path(root) if root is not None else ROOT
+    manifest_path = base / 'RELEASE-MANIFEST.json'
+    if manifest_path.exists() or manifest_path.is_symlink():
+        manifest = load_release_manifest(base)
+        return {'commit': manifest['commit'], 'releaseVersion': manifest['version'],
+                'compatibility': dict(manifest['compatibility'])}
+    require((base / '.git').exists(), 'ORIGEM_NAO_IDENTIFICADA')
+    # Code identity covers runtime inputs; docs, unit tests and desktop scaffold remain decoupled.
+    paths = [base / name for name in run('git', 'ls-files', '-z', 'backend', 'frontend').decode().split('\0')
+             if name and is_runtime_compatibility_path(name)]
+    compat = {p.relative_to(base).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in sorted(paths)}
+    commit = run('git', 'rev-parse', 'HEAD').decode().strip()
+    version = None
+    version_file = base / 'VERSION'
+    if version_file.is_file() and not version_file.is_symlink():
+        candidate = version_file.read_text(encoding='utf-8').strip()
+        if SEMVER_RE.fullmatch(candidate):
+            version = candidate
+    return {'commit': commit, 'releaseVersion': version, 'compatibility': compat}
+
+
 def compatibility():
-    # Code identity covers runtime inputs; documentation/test-only commits remain compatible.
-    paths = [ROOT / name for name in run('git', 'ls-files', '-z', 'backend', 'frontend').decode().split('\0')
-             if name and '/src/test/' not in name]
-    return {p.relative_to(ROOT).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in sorted(paths)}
+    return source_identity()['compatibility']
 
 
 def private_command(action, vault, keys, mounts=()):
@@ -260,14 +352,17 @@ def backup(args):
                              'stopTimeout': container['Config'].get('StopTimeout'),
                              'stopSignal': container['Config'].get('StopSignal'),
                              'entrypoint': container['Config']['Entrypoint'], 'command': container['Config']['Cmd']}
+    identity = source_identity()
     manifest = {'format': 1, 'createdUtc': datetime.now(timezone.utc).isoformat(),
-                'commit': run('git', 'rev-parse', 'HEAD').decode().strip(), 'compatibility': compatibility(),
+                'commit': identity['commit'], 'compatibility': identity['compatibility'],
                 'images': images, 'services': services, 'snapshot': snapshot,
                 'settings': snapshot['integration_settings'], 'flyway': snapshot['flyway_schema_history'],
                 'mediaIncluded': args.include_media,
                 'excluded': ['cluster roles/ACL/tablespaces', 'other databases', 'host .env and scripts',
                              'image layers and source checkout', 'external services/accounts'] +
                             ([] if args.include_media else ['all media file bytes; directories only'])}
+    if identity['releaseVersion']:
+        manifest['releaseVersion'] = identity['releaseVersion']
     claim(args.vault)
     reserve(args.vault, 'package-v1')
     reserve(args.key_vault, 'key-v1')

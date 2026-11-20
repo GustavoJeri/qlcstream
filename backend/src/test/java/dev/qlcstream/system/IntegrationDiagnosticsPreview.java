@@ -40,7 +40,7 @@ public class IntegrationDiagnosticsPreview {
                 new ProwlarrProperties("http://127.0.0.1:18082", "preview-key"),
                 new QbittorrentProperties("http://127.0.0.1:18081", "preview-user", "preview-password"), new ObjectMapper());
         var diagnostics = new IntegrationDiagnostics(probe);
-        var mvc = MockMvcBuilders.standaloneSetup(new SystemStatusController(diagnostics)).build();
+        var mvc = MockMvcBuilders.standaloneSetup(new SystemStatusController(diagnostics, new ReleaseMetadata(""))).build();
         var ui = server(18080);
         ui.createContext("/", exchange -> {
             try {

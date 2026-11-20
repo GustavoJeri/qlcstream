@@ -54,10 +54,10 @@ Aceite: iniciar uma instalação já configurada não exige editar arquivos ou r
 ## F04: atualizações previsíveis
 
 - [x] Definir versões suportadas das integrações e substituir imagens flutuantes por versões testadas (Issue #20 integrada em `develop` pela PR #35).
-- [x] Executar testes e compilação automaticamente em cada alteração (Issue #14; CI ampliado nas Issues #19 a #21).
-- [ ] Validar instalação limpa e atualização com dados existentes.
-- [x] Documentar cópia de segurança e recuperação antes de migrar dados (Issue #21 integrada em `develop` pela PR #36).
-- [ ] Publicar versões identificáveis com notas de alteração.
+- [x] Executar testes e compilação automaticamente em cada alteração (Issue #14; CI ampliado nas Issues #19 a #22/upstream #2).
+- [x] Validar instalação limpa e atualização com dados existentes (Issue #2 / #22 — ensaio isolado em `docs/validation/test-release-upgrade.py`, candidata `0.1.0-rc.1`).
+- [x] Documentar cópia de segurança e recuperação antes de migrar dados (Issue #21 integrada em `develop` pela PR #36; suporte a pacote sem `.git` acrescentado na Issue #2 / #22).
+- [ ] Publicar versões identificáveis com notas de alteração (empacotamento reproduzível, identidade sem Git, notas da candidata `0.1.0-rc.1` e ensaio prontos na Issue #2 / #22; criação de tag e publicação em `main` permanecem etapas posteriores à revisão).
 
 Aceite: cada versão publicada informa o que mudou, o que foi testado e como recuperar a instalação anterior.
 

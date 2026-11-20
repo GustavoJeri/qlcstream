@@ -361,6 +361,8 @@ Problemas comuns:
 
 - [Arquitetura e módulos do backend](docs/architecture.md)
 - [Changelog](CHANGELOG.md)
+- [Versões, empacotamento e atualização recuperável](docs/versoes-atualizacao.md)
+- [Backup e restauração](docs/backup-restauracao.md)
 - [Recuperação de downloads](docs/downloads-confiabilidade.md)
 - [Diagnóstico de conexões](docs/diagnostico-integracoes.md)
 - [Diagnóstico de armazenamento](docs/diagnostico-armazenamento.md)

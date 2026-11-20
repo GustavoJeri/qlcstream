@@ -43,6 +43,16 @@ export type IntegrationSettingsChange =
   | (IntegrationCandidate & { source: 'application' })
   | { source: 'environment' };
 
+export interface SystemStatus {
+  application: string;
+  status: string;
+  version: string;
+  channel: 'candidate' | 'release';
+  schemaVersion: string;
+  commit: string;
+  timestamp: string;
+}
+
 export interface IntegrationCandidateResult {
   id: IntegrationId;
   configured: boolean;
@@ -52,6 +62,9 @@ export interface IntegrationCandidateResult {
 @Injectable({ providedIn: 'root' })
 export class SystemApiService {
   private readonly http = inject(HttpClient);
+  status(): Observable<SystemStatus> {
+    return this.http.get<SystemStatus>(apiUrl('/api/system/status'));
+  }
   integrationKey(): Observable<{ ready: boolean }> {
     return this.http.get<{ ready: boolean }>(apiUrl('/api/system/integration-settings/key'));
   }

@@ -3,7 +3,7 @@ import { DatePipe } from '@angular/common';
 import { EMPTY, Subscription, expand, switchMap, timer, timeout } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
-import { StorageDiagnostic, IntegrationStatus, SystemApiService } from '../core/system-api.service';
+import { StorageDiagnostic, IntegrationStatus, SystemApiService, SystemStatus } from '../core/system-api.service';
 import { LibraryApiService } from '../core/library-api.service';
 import { DesktopFileService } from '../core/desktop-file.service';
 import { isDesktopApp } from '../core/api-url';
@@ -16,7 +16,7 @@ import { isDesktopApp } from '../core/api-url';
   template: `
     <div class="page settings-page">
       <header class="settings-header">
-        <div><p class="settings-label">Neste computador</p><h1>Configurações</h1><p>Escolha onde os novos downloads serão guardados e confira se o aplicativo está pronto para usar.</p></div>
+        <div><p class="settings-label">Neste computador</p><h1>Configurações</h1><p>Escolha onde os novos downloads serão guardados e confira se o aplicativo está pronto para usar.</p><p class="release-version">{{ versionSummary() }}</p></div>
         <button class="btn refresh-button" type="button" [disabled]="refreshDisabled()" (click)="load(true)"><i class="ph ph-arrows-clockwise"></i> Testar novamente</button>
       </header>
 
@@ -67,6 +67,7 @@ export class SettingsPage {
   readonly checkingStorage = signal(false);
   readonly storageCheckFailed = signal(false);
   readonly state = signal<'loading' | 'ready' | 'error'>('loading');
+  readonly systemStatus = signal<SystemStatus | null>(null);
   readonly integrations = signal<IntegrationStatus[]>([]);
   readonly downloadDirectory = signal('incoming');
   readonly savingStorage = signal(false);
@@ -86,7 +87,20 @@ export class SettingsPage {
 
   constructor() {
     timer(0, 1000).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.now.set(Date.now()));
-    this.load(); this.loadStorage(); this.checkStorage();
+    this.loadStatus(); this.load(); this.loadStorage(); this.checkStorage();
+  }
+  loadStatus(): void {
+    this.systemApi.status().pipe(timeout(6000), takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (status) => this.systemStatus.set(status),
+      error: () => this.systemStatus.set(null),
+    });
+  }
+  versionSummary(): string {
+    const info = this.systemStatus();
+    if (!info?.version) return 'Versão instalada: indisponível no momento.';
+    const channel = info.channel === 'candidate' ? ' (candidata)' : '';
+    const commit = info.commit && info.commit !== 'unknown' ? ` · ${info.commit.slice(0, 7)}` : '';
+    return `Versão instalada: ${info.version}${channel} · Esquema ${info.schemaVersion}${commit}`;
   }
   readinessTitle(): string { return this.allConfigured() ? 'Tudo pronto' : this.state() === 'error' ? 'Não foi possível verificar' : this.state() === 'loading' || this.checking() ? 'Verificando recursos' : 'Alguns recursos precisam de atenção'; }
   readinessDescription(): string { return this.state() === 'error' ? 'Não foi possível consultar o backend. Teste novamente; isso não indica credenciais recusadas nas integrações.' : this.connectionsAvailable() ? 'As três conexões foram verificadas. Confira abaixo o diagnóstico da pasta; o compartilhamento físico ainda não foi comprovado.' : 'Confira as orientações abaixo. Resultados das conexões valem por um minuto; use Testar novamente para atualizar. A pasta tem diagnóstico separado.'; }

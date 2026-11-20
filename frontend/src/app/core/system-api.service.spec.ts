@@ -19,6 +19,17 @@ describe('SystemApiService integration settings', () => {
   });
   afterEach(() => http.verify());
 
+  it('loads system status with installed release identity', () => {
+    const payload = {
+      application: 'QLC Stream', status: 'ready', version: '0.1.0-rc.1', channel: 'candidate' as const,
+      schemaVersion: 'V12', commit: '0123456789abcdef0123456789abcdef01234567', timestamp: '2026-11-19T00:00:00Z',
+    };
+    service.status().subscribe((result) => expect(result).toEqual(payload));
+    const request = http.expectOne('/api/system/status');
+    expect(request.request.method).toBe('GET');
+    request.flush(payload);
+  });
+
   it('loads the server state without issuing updates', () => {
     service.integrationSettings().subscribe((result) => expect(result).toEqual([state]));
     const request = http.expectOne('/api/system/integration-settings');

@@ -8,6 +8,12 @@ RUN mvn -q -DskipTests package
 FROM python:3.13-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e AS file-operations
 
 FROM eclipse-temurin:21-jre-alpine
+ARG QLCSTREAM_VERSION=0.1.0-rc.1
+ARG QLCSTREAM_COMMIT=unknown
+LABEL org.opencontainers.image.title="QLC Stream Backend" \
+      org.opencontainers.image.version="${QLCSTREAM_VERSION}" \
+      org.opencontainers.image.revision="${QLCSTREAM_COMMIT}"
+ENV QLCSTREAM_RELEASE_COMMIT="${QLCSTREAM_COMMIT}"
 RUN addgroup -S qlcstream && adduser -S qlcstream -G qlcstream
 WORKDIR /app
 COPY --from=build /workspace/target/*.jar app.jar

@@ -13,6 +13,10 @@ describe('Storage diagnostics in settings', () => {
 
   function open() {
     const fixture = TestBed.createComponent(SettingsPage);
+    http.expectOne('/api/system/status').flush({
+      application: 'QLC Stream', status: 'ready', version: '0.1.0-rc.1', channel: 'candidate',
+      schemaVersion: 'V12', commit: 'unknown', timestamp: '2026-11-19T12:00:00Z',
+    });
     http.expectOne('/api/system/integrations').flush(['tmdb', 'prowlarr', 'qbittorrent'].map(id => ({
       id, configured: true, status: 'available', reason: 'ok', checkedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 60000).toISOString(), retryAfter: null,

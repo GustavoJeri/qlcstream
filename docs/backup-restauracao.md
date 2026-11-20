@@ -121,6 +121,7 @@ Os nomes são `<target>-database`, `-backend`, `-frontend`, `-prowlarr` e `-qbit
 | `BACKUP_INCOMPLETO`, `BACKUP_CORROMPIDO`, `PACOTE_INVALIDO` | Preserve para análise privada e obtenha outra cópia íntegra; não crie manualmente `COMPLETE`. |
 | `CHAVE_AUSENTE`, `CHAVE_INCORRETA`, `CHAVE_INVALIDA` | Forneça o volume com a chave original associada ao banco; não gere substituta. |
 | `VERSAO_ESQUEMA_INCOMPATIVEL`, `IMAGEM_ORIGINAL_AUSENTE` | Use arquivos de execução/migrações e imagens originais; não force a inicialização com outra versão. |
+| `MANIFESTO_INVALIDO`, `ORIGEM_NAO_IDENTIFICADA` | Em instalação extraída de pacote, execute `python scripts/qlc-release.py verify-dir` e restaure a pasta da versão correspondente a partir do pacote verificado; não opere sobre pastas sem `.git` nem `RELEASE-MANIFEST.json`. |
 | `DESTINO_OCUPADO` | Escolha outro nome novo; dados anteriores e destinos parciais permanecem preservados. |
 | `LINK_OU_TIPO_NAO_SUPORTADO`, `ARQUIVO_INSEGURO`, `MONTAGEM_EXTRA_NAO_SUPORTADA`, `TOPOLOGIA_NAO_SUPORTADA`, `SUBDIRETORIO_DE_VOLUME_NAO_SUPORTADO` | Revise o layout e escolha procedimento compatível; não siga links ou corrija permissões silenciosamente. |
 | `COMANDO_FALHOU`, `OPERACAO_FALHOU`, `BANCO_NAO_PRONTO`, `REGISTROS_RESTAURADOS_DIVERGENTES` | Corrija a causa localmente, preserve origem/pacote, examine o destino privado e repita em outro destino novo. Não considere a recuperação concluída. |
