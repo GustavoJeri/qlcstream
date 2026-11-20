@@ -306,14 +306,18 @@ def main():
         print('PASS: pre-upgrade backup from extracted package without .git', flush=True)
 
         # 5. Apply synthetic v2 candidate package onto install_active, preserving .env and data/.
-        run_cli(install_active / 'scripts/qlc-release.py', install_active,
-                'apply', '--package', str(v2_zip), '--checksums', str(v2_sums), '--target', str(install_active))
+        applied_v2 = json.loads(run_cli(
+            install_active / 'scripts/qlc-release.py', install_active,
+            'apply', '--package', str(v2_zip), '--checksums', str(v2_sums), '--target', str(install_active),
+        ).stdout.decode())
+        assert applied_v2['integrationsChanged'] == [], applied_v2
         assert user_env.read_text(encoding='utf-8') == 'POSTGRES_DB=versions_test\nMEDIA_HOST_PATH=./data/media\n'
         assert user_marker.read_bytes() == b'preserved across upgrade\n'
         inspected_v2 = json.loads(run_cli(install_active / 'scripts/qlc-release.py', install_active, 'inspect').stdout.decode())
         assert inspected_v2['version'] == v2_ver and inspected_v2['commit'] == v2_commit
 
-        # Build v2 images from upgraded package and recreate ONLY backend & frontend.
+        # Build v2 images from upgraded package and recreate ONLY backend & frontend
+        # (valid because integrationsChanged == []; changed integration digests require pull + recreate).
         be_v2, fe_v2 = build_app_images(install_active, v2_ver, v2_commit, 'v2')
         write_override(override_v2, be_v2, fe_v2)
         active_override = override_v2
@@ -321,8 +325,12 @@ def main():
         compose(override_v2, 'start', 'prowlarr', 'qbittorrent', 'source')
 
         assert_status_identity(compose_network, v2_ver, 'candidate', v1_schema, v2_commit)
+        assert_packaged_version_checker(compose_network, install_active)
+        for svc in ('database', 'prowlarr', 'qbittorrent'):
+            cid = compose(override_v2, 'ps', '-q', svc).decode().strip()
+            assert b.inspect('container', cid)['Config']['Image'] == inspected_v2['integrations'][svc], svc
         run_fixture(override_v2, 'check-media')
-        results.append(f'upgrade {v1_ver} -> {v2_ver} preserved .env, data, database records, settings, indexer, torrent and media')
+        results.append(f'upgrade {v1_ver} -> {v2_ver} preserved .env, data, database records, settings, indexer, torrent, media and pinned integration matrix')
         print('PASS: upgrade v1 -> v2 preserved all state and reported new version', flush=True)
 
         # Confirm v2 extracted package refuses restoring a v1 backup before creating target volumes.

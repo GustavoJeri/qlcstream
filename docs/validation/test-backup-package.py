@@ -88,5 +88,66 @@ class ArchiveTests(unittest.TestCase):
                 self.assertTrue(all(m.isdir() for m in members))
                 self.assertEqual(t.getmember('incoming').mode, 0o2770)
 
+    def test_legacy_format_1_manifest_with_tauri_and_spec_paths_is_still_accepted_only_on_exact_match(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            pkg = base / 'package'
+            key_root = base / 'key'
+            pkg.mkdir()
+            key_root.mkdir()
+            raw_key = bytes([7]) * 32
+            encoded_key = base64.b64encode(raw_key)
+            (key_root / 'integration-settings.key').write_bytes(encoded_key)
+
+            (pkg / 'database.dump').write_bytes(b'PGDMP-synthetic')
+            for comp, rels in (
+                ('prowlarr', ('config.xml', 'prowlarr.db')),
+                ('qbittorrent', ('qBittorrent/config/qBittorrent.conf',)),
+                ('media', ()),
+            ):
+                src = base / ('src-' + comp)
+                src.mkdir()
+                for rel in rels:
+                    target = src / rel
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(b'synthetic')
+                v.archive(src, pkg / (comp + '.tar'))
+
+            runtime_compat = {
+                'backend/pom.xml': '1' * 64,
+                'frontend/package.json': '2' * 64,
+            }
+            legacy_compat = {
+                **runtime_compat,
+                'frontend/src-tauri/Cargo.toml': '3' * 64,
+                'frontend/src/app/app.spec.ts': '4' * 64,
+            }
+            manifest = {
+                'format': 1,
+                'commit': 'a' * 40,
+                'compatibility': legacy_compat,
+                'keyHash': hashlib.sha256(encoded_key).hexdigest(),
+                'settings': [],
+                'files': {name: v.digest(pkg / name)
+                          for name in ('database.dump', 'prowlarr.tar', 'qbittorrent.tar', 'media.tar')},
+            }
+            import json
+            (pkg / 'manifest.json').write_text(json.dumps(manifest, sort_keys=True))
+            (pkg / 'COMPLETE').write_text(v.digest(pkg / 'manifest.json'))
+
+            # Without legacyCompatibility, runtime-only map must not accept legacy manifest.
+            with self.assertRaisesRegex(ValueError, '^VERSAO_ESQUEMA_INCOMPATIVEL$'):
+                v.verify(pkg, key_root, runtime_compat)
+            # Empty legacyCompatibility must also be refused.
+            with self.assertRaisesRegex(ValueError, '^VERSAO_ESQUEMA_INCOMPATIVEL$'):
+                v.verify(pkg, key_root, runtime_compat, legacy_compatibility={})
+            # Exact legacy compatibility map accepts the legacy format-1 backup.
+            verified = v.verify(pkg, key_root, runtime_compat, legacy_compatibility=legacy_compat)
+            self.assertEqual(verified['compatibility'], legacy_compat)
+            # Changing even one legacy file hash must still be refused.
+            drifted = {**legacy_compat, 'frontend/src-tauri/Cargo.toml': 'f' * 64}
+            with self.assertRaisesRegex(ValueError, '^VERSAO_ESQUEMA_INCOMPATIVEL$'):
+                v.verify(pkg, key_root, runtime_compat, legacy_compatibility=drifted)
+
 
 unittest.main()

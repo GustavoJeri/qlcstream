@@ -13,14 +13,50 @@ spec = importlib.util.spec_from_file_location('backup', ROOT / 'scripts/qlc-back
 b = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(b)
 
+rspec = importlib.util.spec_from_file_location('release', ROOT / 'scripts/qlc-release.py')
+r = importlib.util.module_from_spec(rspec)
+rspec.loader.exec_module(r)
+
+SAMPLE_COMPOSE = (
+    'services:\n'
+    '  setup-directories:\n'
+    '    image: alpine:3.23@sha256:' + 'a' * 64 + '\n'
+    '  database:\n'
+    '    image: postgres:18.6-alpine@sha256:' + 'b' * 64 + '\n'
+    '  backend:\n'
+    '    build:\n'
+    '      context: ./backend\n'
+    '      args:\n'
+    '        QLCSTREAM_VERSION: ${QLCSTREAM_VERSION:-0.1.0-rc.1}\n'
+    '  frontend:\n'
+    '    build:\n'
+    '      context: ./frontend\n'
+    '      args:\n'
+    '        QLCSTREAM_VERSION: ${QLCSTREAM_VERSION:-0.1.0-rc.1}\n'
+    '  prowlarr:\n'
+    '    image: lscr.io/linuxserver/prowlarr:2.7.0.5723-ls168@sha256:' + 'c' * 64 + '\n'
+    '  qbittorrent:\n'
+    '    image: qbittorrentofficial/qbittorrent-nox:5.3.0-2@sha256:' + 'd' * 64 + '\n'
+)
+
 
 def create_synthetic_package(folder, commit='a' * 40, version='0.1.0-rc.1'):
     root = Path(folder)
+    notes = '\n'.join(['# Release', *r.REQUIRED_NOTE_MARKERS]) + '\n'
     files = {
         'VERSION': (version + '\n').encode('utf-8'),
+        'compose.yaml': SAMPLE_COMPOSE.replace('0.1.0-rc.1', version).encode('utf-8'),
+        'backend/Dockerfile': f'FROM scratch\nARG QLCSTREAM_VERSION={version}\n'.encode('utf-8'),
+        'frontend/Dockerfile': f'FROM scratch\nARG QLCSTREAM_VERSION={version}\n'.encode('utf-8'),
         'backend/pom.xml': b'<project/>',
+        'backend/src/main/resources/release-metadata.properties': (
+            f'qlcstream.release.version={version}\n'
+            f'qlcstream.release.channel={"candidate" if "-" in version else "release"}\n'
+            'qlcstream.release.schema-version=V1\n'
+        ).encode('utf-8'),
         'backend/src/main/resources/db/migration/V1__init.sql': b'SELECT 1;\n',
         'frontend/package.json': b'{"name":"frontend"}\n',
+        f'docs/releases/{version}.md': notes.encode('utf-8'),
     }
     hashes = {}
     for rel, data in files.items():
@@ -32,8 +68,10 @@ def create_synthetic_package(folder, commit='a' * 40, version='0.1.0-rc.1'):
     manifest = {
         'format': 1,
         'version': version,
-        'channel': 'candidate',
+        'channel': 'candidate' if '-' in version else 'release',
+        'schemaVersion': 'V1',
         'commit': commit,
+        'integrations': r.parse_compose_images(files['compose.yaml'].decode('utf-8')),
         'files': hashes,
         'compatibility': compat,
     }
@@ -112,7 +150,7 @@ class BackupCommandTests(unittest.TestCase):
                 b.stop_options(value)
         manifest = {'services': {s: {'stopTimeout': None, 'stopSignal': None} for s in b.SERVICES}}
         del manifest['services']['qbittorrent']['stopTimeout']
-        with patch.object(b, 'exists', return_value=True), patch.object(b, 'compatibility', return_value={}), patch.object(b, 'private', return_value=json.dumps(manifest).encode()):
+        with patch.object(b, 'exists', return_value=True), patch.object(b, 'compatibility_request', return_value={'compatibility': {}}), patch.object(b, 'private', return_value=json.dumps(manifest).encode()):
             with self.assertRaisesRegex(ValueError, '^BACKUP_INCOMPLETO$'):
                 b.metadata(type('Args', (), {'vault': 'fixture', 'key_vault': 'key'})())
 
@@ -126,9 +164,38 @@ class BackupCommandTests(unittest.TestCase):
             # Must not invoke git at all when RELEASE-MANIFEST.json is present.
             with patch.object(b, 'run', side_effect=AssertionError('git should not be called')):
                 identity = b.source_identity(root)
+                payload = b.compatibility_request(root)
             self.assertEqual(identity['commit'], manifest['commit'])
             self.assertEqual(identity['releaseVersion'], '0.1.0-rc.1')
             self.assertEqual(identity['compatibility'], manifest['compatibility'])
+            self.assertIsNone(identity['legacyCompatibility'])
+            self.assertEqual(payload, {'compatibility': manifest['compatibility']})
+
+    def test_shared_manifest_validator_rejects_version_divergence_between_manifest_and_version_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root, manifest = create_synthetic_package(folder, version='0.1.0-rc.1')
+            # Mutate VERSION and update its hash in RELEASE-MANIFEST.json while keeping manifest['version'] at 0.1.0-rc.1.
+            new_version_bytes = b'9.9.9-rc.1\n'
+            (root / 'VERSION').write_bytes(new_version_bytes)
+            manifest['files']['VERSION'] = hashlib.sha256(new_version_bytes).hexdigest()
+            (root / 'RELEASE-MANIFEST.json').write_text(json.dumps(manifest, sort_keys=True), encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, '^VERSAO_DIVERGENTE$'):
+                r.verify_directory(root)
+            with self.assertRaisesRegex(ValueError, '^MANIFESTO_INVALIDO$'):
+                b.source_identity(root)
+
+    def test_git_checkout_preserves_legacy_compatibility_for_existing_format_1_backups(self):
+        if not (ROOT / '.git').exists():
+            self.skipTest('requires git checkout')
+        payload = b.compatibility_request(ROOT)
+        self.assertIn('compatibility', payload)
+        self.assertIn('legacyCompatibility', payload)
+        runtime_keys = set(payload['compatibility'])
+        legacy_keys = set(payload['legacyCompatibility'])
+        self.assertTrue(runtime_keys < legacy_keys)
+        self.assertIn('frontend/src-tauri/Cargo.toml', legacy_keys - runtime_keys)
+        self.assertTrue(any(k.endswith('.spec.ts') for k in legacy_keys - runtime_keys))
+        self.assertFalse(any('/src/test/' in k for k in legacy_keys))
 
     def test_release_package_rejects_tampering_extra_migrations_and_unidentified_directories(self):
         with tempfile.TemporaryDirectory() as folder:

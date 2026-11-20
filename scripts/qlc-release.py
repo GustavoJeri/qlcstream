@@ -5,13 +5,14 @@ Python 3.12+, standard library only, no host installs. Never reads .env or data/
 import argparse
 from datetime import datetime, timezone
 import hashlib
-import io
 import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -91,6 +92,7 @@ LOCAL_BUILD_CACHE_PREFIXES = (
     'frontend/dist/',
     'frontend/.angular/',
 )
+ALLOWED_EXAMPLE_POSTGRES_PASSWORDS = frozenset({'', 'qlc_stream_local'})
 
 
 def require(condition, code):
@@ -152,8 +154,13 @@ def scan_content_for_secrets(rel_posix, raw_bytes):
             if not stripped or stripped.startswith('#'):
                 continue
             key, sep, value = stripped.partition('=')
-            if sep and key in ('TMDB_API_TOKEN', 'PROWLARR_API_KEY', 'QBITTORRENT_PASSWORD'):
-                require(value.strip() == '', 'SEGREDO_DETECTADO')
+            if not sep:
+                continue
+            cleaned = value.strip()
+            if key in ('TMDB_API_TOKEN', 'PROWLARR_API_KEY', 'QBITTORRENT_PASSWORD'):
+                require(cleaned == '', 'SEGREDO_DETECTADO')
+            elif key == 'POSTGRES_PASSWORD':
+                require(cleaned in ALLOWED_EXAMPLE_POSTGRES_PASSWORDS, 'SEGREDO_DETECTADO')
 
 
 def parse_properties(text):
@@ -252,10 +259,51 @@ def validate_release_consistency(file_bytes_map):
     }
 
 
-def git_run(root, *args):
-    p = subprocess.run(['git', *args], cwd=root, capture_output=True)
+def git_run(root, *args, data=None):
+    p = subprocess.run(['git', *args], cwd=root, input=data, capture_output=True)
     require(p.returncode == 0, 'GIT_INDISPONIVEL')
     return p.stdout
+
+
+def read_head_blobs(root, selected_paths):
+    """Read canonical Git blobs from HEAD so LF/CRLF working-tree settings never alter hashes."""
+    tree_raw = git_run(root, 'ls-tree', '-r', '-z', '--full-tree', 'HEAD')
+    tree_entries = {}
+    for entry in tree_raw.split(b'\0'):
+        if not entry:
+            continue
+        meta_part, sep, path_part = entry.partition(b'\t')
+        require(bool(sep), 'GIT_INDISPONIVEL')
+        parts = meta_part.decode('utf-8').split(' ')
+        require(len(parts) == 3, 'GIT_INDISPONIVEL')
+        mode, obj_type, oid = parts
+        tree_entries[path_part.decode('utf-8')] = (mode, obj_type, oid)
+
+    ordered = []
+    for rel in sorted(selected_paths):
+        require(rel in tree_entries, 'ARQUIVO_NAO_VERSIONADO')
+        mode, obj_type, oid = tree_entries[rel]
+        require(obj_type == 'blob', 'ARQUIVO_OBRIGATORIO_AUSENTE')
+        require(mode in ('100644', '100755'), 'LINK_NAO_SUPORTADO')
+        ordered.append((rel, oid))
+
+    batch_in = ''.join(f'{oid}\n' for _, oid in ordered).encode('utf-8')
+    batch_out = git_run(root, 'cat-file', '--batch', data=batch_in)
+    cursor = 0
+    blobs = {}
+    for rel, expected_oid in ordered:
+        nl = batch_out.find(b'\n', cursor)
+        require(nl != -1, 'GIT_INDISPONIVEL')
+        header = batch_out[cursor:nl].decode('utf-8').split(' ')
+        require(len(header) == 3 and header[0] == expected_oid and header[1] == 'blob', 'GIT_INDISPONIVEL')
+        size = int(header[2])
+        start = nl + 1
+        end = start + size
+        require(end < len(batch_out) and batch_out[end:end + 1] == b'\n', 'GIT_INDISPONIVEL')
+        blobs[rel] = batch_out[start:end]
+        cursor = end + 1
+    require(cursor == len(batch_out), 'GIT_INDISPONIVEL')
+    return blobs
 
 
 def collect_release_files(root, allow_dirty=False):
@@ -270,15 +318,24 @@ def collect_release_files(root, allow_dirty=False):
         require(allow_dirty, 'ARVORE_SUJA')
         working_tree = 'dirty'
 
-    version_path = root / 'VERSION'
-    require(version_path.is_file() and not version_path.is_symlink(), 'VERSAO_AUSENTE')
-    version = version_path.read_text(encoding='utf-8').strip()
-    require(SEMVER_RE.fullmatch(version) is not None, 'VERSAO_INVALIDA')
+    if allow_dirty:
+        version_path = root / 'VERSION'
+        require(version_path.is_file() and not version_path.is_symlink(), 'VERSAO_AUSENTE')
+        version = version_path.read_text(encoding='utf-8').strip()
+        tracked = [
+            name for name in git_run(root, 'ls-files', '-z').decode('utf-8').split('\0') if name
+        ]
+        tracked_set = set(tracked)
+    else:
+        head_version = read_head_blobs(root, ('VERSION',))['VERSION']
+        version = head_version.decode('utf-8').strip()
+        tracked = [
+            name for name in git_run(root, 'ls-tree', '-r', '-z', '--name-only', '--full-tree', 'HEAD')
+            .decode('utf-8').split('\0') if name
+        ]
+        tracked_set = set(tracked)
 
-    tracked = [
-        name for name in git_run(root, 'ls-files', '-z').decode('utf-8').split('\0') if name
-    ]
-    tracked_set = set(tracked)
+    require(SEMVER_RE.fullmatch(version) is not None, 'VERSAO_INVALIDA')
 
     selected = set()
     for rel in (*ROOT_FILES, *SCRIPT_FILES, *DOC_FILES, f'docs/releases/{version}.md'):
@@ -290,8 +347,6 @@ def collect_release_files(root, allow_dirty=False):
         if is_runtime_compatibility_path(rel):
             selected.add(rel)
 
-    # In --allow-dirty local rehearsals, also include untracked runtime files under backend/frontend
-    # that are not ignored by git so local pre-commit trials work faithfully.
     if allow_dirty:
         untracked = [
             name for name in git_run(root, 'ls-files', '-z', '--others', '--exclude-standard', 'backend', 'frontend')
@@ -302,18 +357,25 @@ def collect_release_files(root, allow_dirty=False):
                 selected.add(rel)
 
     file_bytes = {}
-    for rel in sorted(selected):
-        ensure_path_allowed(rel)
-        full = root / rel
-        require(full.is_file() and not full.is_symlink(), 'ARQUIVO_OBRIGATORIO_AUSENTE')
-        # Ensure no parent directory within root is a symlink.
-        current = full.parent
-        while current != root:
-            require(not current.is_symlink(), 'LINK_NAO_SUPORTADO')
-            current = current.parent
-        content = full.read_bytes()
-        scan_content_for_secrets(rel, content)
-        file_bytes[rel] = content
+    if allow_dirty:
+        for rel in sorted(selected):
+            ensure_path_allowed(rel)
+            full = root / rel
+            require(full.is_file() and not full.is_symlink(), 'ARQUIVO_OBRIGATORIO_AUSENTE')
+            current = full.parent
+            while current != root:
+                require(not current.is_symlink(), 'LINK_NAO_SUPORTADO')
+                current = current.parent
+            content = full.read_bytes()
+            scan_content_for_secrets(rel, content)
+            file_bytes[rel] = content
+    else:
+        for rel in sorted(selected):
+            ensure_path_allowed(rel)
+        blobs = read_head_blobs(root, selected)
+        for rel, content in sorted(blobs.items()):
+            scan_content_for_secrets(rel, content)
+            file_bytes[rel] = content
 
     meta = validate_release_consistency(file_bytes)
     commit = git_run(root, 'rev-parse', 'HEAD').decode('utf-8').strip().lower()
@@ -506,8 +568,14 @@ def verify_directory(target_dir):
     root = raw_root.resolve()
     require(root.is_dir(), 'DIRETORIO_AUSENTE')
     manifest_path = root / 'RELEASE-MANIFEST.json'
-    require(manifest_path.is_file() and not manifest_path.is_symlink(), 'MANIFESTO_AUSENTE')
-    manifest = validate_manifest_schema(json.loads(manifest_path.read_text(encoding='utf-8')))
+    require(not manifest_path.is_symlink(), 'LINK_NAO_SUPORTADO')
+    require(manifest_path.is_file(), 'MANIFESTO_AUSENTE')
+    try:
+        manifest = validate_manifest_schema(json.loads(manifest_path.read_text(encoding='utf-8')))
+    except ValueError:
+        raise
+    except Exception:
+        raise ValueError('MANIFESTO_INVALIDO') from None
 
     file_bytes = {}
     for rel, expected_sha in manifest['files'].items():
@@ -530,7 +598,6 @@ def verify_directory(target_dir):
         require(base.is_dir() and not base.is_symlink(), 'ARQUIVO_AUSENTE')
         for dirpath, dirnames, filenames in os.walk(base, followlinks=False):
             rel_dir = Path(dirpath).relative_to(root).as_posix()
-            # Skip local build caches if present on disk, never skipping runtime sources.
             pruned = []
             for d in dirnames:
                 full_d = Path(dirpath) / d
@@ -552,8 +619,25 @@ def verify_directory(target_dir):
 
     meta = validate_release_consistency(file_bytes)
     require(meta['version'] == manifest['version'], 'VERSAO_DIVERGENTE')
+    require(meta['channel'] == manifest['channel'], 'CANAL_DIVERGENTE')
     require(meta['schemaVersion'] == manifest['schemaVersion'], 'ESQUEMA_DIVERGENTE')
+    require(meta['integrations'] == manifest.get('integrations'), 'MATRIZ_DIVERGENTE')
     return manifest
+
+
+def _replace_file(src_path, dst_path):
+    dst_path.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(src_path, dst_path)
+
+
+def _prune_empty_parents(path, stop_at):
+    parent = path.parent
+    while parent != stop_at:
+        try:
+            parent.rmdir()
+        except OSError:
+            break
+        parent = parent.parent
 
 
 def apply_package(zip_path, target_dir, checksums_path=None):
@@ -566,26 +650,26 @@ def apply_package(zip_path, target_dir, checksums_path=None):
     target = raw_target.resolve()
     require(not (target / '.git').exists() and not (target / '.git').is_symlink(), 'DESTINO_GIT_NAO_SUPORTADO')
 
+    old_manifest = None
     old_files = set()
     old_version = None
     old_manifest_path = target / 'RELEASE-MANIFEST.json'
-    if target.exists():
+    target_existed = target.exists()
+
+    # Preflight existing target completely BEFORE writing a single byte.
+    if target_existed:
         require(target.is_dir(), 'DIRETORIO_INVALIDO')
         require(not old_manifest_path.is_symlink(), 'LINK_NAO_SUPORTADO')
         if old_manifest_path.exists():
-            require(old_manifest_path.is_file(), 'MANIFESTO_INVALIDO')
-            old_manifest = validate_manifest_schema(json.loads(old_manifest_path.read_text(encoding='utf-8')))
+            old_manifest = verify_directory(target)
             old_files = set(old_manifest['files'])
             old_version = old_manifest['version']
         else:
-            # Refuse mutating a non-empty unmanaged directory before touching any file.
             existing_entries = [entry.name for entry in target.iterdir()]
             unexpected = [name for name in existing_entries if name not in USER_RUNTIME_EXEMPT]
             require(not unexpected, 'DESTINO_NAO_GERENCIADO')
-    else:
-        target.mkdir(parents=True, exist_ok=True)
 
-    # Pre-check every destination path and every ancestor before writing anything.
+    # Pre-check every destination path and ancestor before mutating anything.
     for rel in file_bytes:
         top = PurePosixPath(rel).parts[0]
         require(top not in USER_RUNTIME_EXEMPT, 'ARQUIVO_PROIBIDO')
@@ -601,7 +685,6 @@ def apply_package(zip_path, target_dir, checksums_path=None):
                 require(current.is_dir(), 'DIRETORIO_INVALIDO')
             current = current.parent
 
-    # Pre-check obsolete paths too so no symlink can ever be traversed during cleanup.
     obsolete = sorted(old_files - set(file_bytes))
     for rel in obsolete:
         top = PurePosixPath(rel).parts[0]
@@ -614,34 +697,95 @@ def apply_package(zip_path, target_dir, checksums_path=None):
             require(not current.is_symlink(), 'LINK_NAO_SUPORTADO')
             current = current.parent
 
-    # Write all new distribution files. Never touch .env, data/, or .qlcstream-start.lock.
-    for rel, content in sorted(file_bytes.items()):
-        dest = target / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(content)
-        if os.name == 'posix' and (rel.endswith('.sh') or rel == 'backend/mvnw'):
-            dest.chmod(0o755)
+    # Stage and verify the full new release tree in a sibling temp directory before touching target.
+    target.parent.mkdir(parents=True, exist_ok=True)
+    stage_dir = Path(tempfile.mkdtemp(prefix='.qlcstream-stage-', dir=target.parent))
+    backup_dir = Path(tempfile.mkdtemp(prefix='.qlcstream-rollback-', dir=target.parent))
+    backed_up = []
+    created_files = []
+    created_target_dir = False
 
-    # Remove obsolete files that belonged exclusively to the previous release manifest.
-    for rel in obsolete:
-        top = PurePosixPath(rel).parts[0]
-        if top in USER_RUNTIME_EXEMPT:
-            continue
-        old_path = target / rel
-        if old_path.is_file() and not old_path.is_symlink():
-            old_path.unlink()
-            parent = old_path.parent
-            while parent != target:
+    try:
+        for rel, content in sorted(file_bytes.items()):
+            staged = stage_dir / rel
+            staged.parent.mkdir(parents=True, exist_ok=True)
+            staged.write_bytes(content)
+            if os.name == 'posix' and (rel.endswith('.sh') or rel == 'backend/mvnw'):
+                staged.chmod(0o755)
+        (stage_dir / 'RELEASE-MANIFEST.json').write_bytes(manifest_raw)
+        verify_directory(stage_dir)
+
+        if not target_existed:
+            target.mkdir(parents=True, exist_ok=True)
+            created_target_dir = True
+
+        # Save existing managed files and manifest to rollback area before replacing anything.
+        to_backup = sorted((set(file_bytes) | set(obsolete)) & old_files)
+        if old_manifest is not None:
+            to_backup.append('RELEASE-MANIFEST.json')
+        for rel in to_backup:
+            src = target / rel
+            if src.is_file() and not src.is_symlink():
+                bkp = backup_dir / rel
+                bkp.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, bkp)
+                backed_up.append((rel, bkp))
+
+        # Apply staged files atomically per file; roll back completely on any error.
+        try:
+            for rel in sorted(file_bytes):
+                dest = target / rel
+                existed = dest.exists()
+                _replace_file(stage_dir / rel, dest)
+                if not existed:
+                    created_files.append(rel)
+
+            for rel in obsolete:
+                top = PurePosixPath(rel).parts[0]
+                if top in USER_RUNTIME_EXEMPT:
+                    continue
+                old_path = target / rel
+                if old_path.is_file() and not old_path.is_symlink():
+                    old_path.unlink()
+                    _prune_empty_parents(old_path, target)
+
+            require(not old_manifest_path.is_symlink(), 'LINK_NAO_SUPORTADO')
+            existed_manifest = old_manifest_path.exists()
+            _replace_file(stage_dir / 'RELEASE-MANIFEST.json', old_manifest_path)
+            if not existed_manifest:
+                created_files.append('RELEASE-MANIFEST.json')
+
+            verify_directory(target)
+        except Exception:
+            # Roll back target to its exact pre-apply state without touching .env or data/.
+            for rel in reversed(created_files):
+                added = target / rel
+                if added.is_file() and not added.is_symlink():
+                    added.unlink()
+                    _prune_empty_parents(added, target)
+            for rel, bkp in backed_up:
+                dest = target / rel
+                if bkp.is_file():
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(bkp, dest)
+            if created_target_dir and target.is_dir():
                 try:
-                    parent.rmdir()
+                    target.rmdir()
                 except OSError:
-                    break
-                parent = parent.parent
+                    pass
+            raise
+    finally:
+        shutil.rmtree(stage_dir, ignore_errors=True)
+        shutil.rmtree(backup_dir, ignore_errors=True)
 
-    # Publish the new manifest last, then verify the resulting directory end-to-end.
-    require(not old_manifest_path.is_symlink(), 'LINK_NAO_SUPORTADO')
-    old_manifest_path.write_bytes(manifest_raw)
-    verify_directory(target)
+    integrations_changed = []
+    if old_manifest is not None:
+        old_int = old_manifest.get('integrations') or {}
+        new_int = new_manifest.get('integrations') or {}
+        integrations_changed = sorted(
+            svc for svc in (set(old_int) | set(new_int)) if old_int.get(svc) != new_int.get(svc)
+        )
+
     return {
         'status': 'applied',
         'previousVersion': old_version,
@@ -651,14 +795,17 @@ def apply_package(zip_path, target_dir, checksums_path=None):
         'commit': new_manifest['commit'],
         'target': str(target),
         'removedObsoleteCount': len(obsolete),
+        'integrationsChanged': integrations_changed,
     }
 
 
 def inspect_installation(target_dir):
-    root = Path(target_dir).resolve()
+    raw_root = Path(target_dir)
+    require(not raw_root.is_symlink(), 'LINK_NAO_SUPORTADO')
+    root = raw_root.resolve()
     require(root.is_dir(), 'DIRETORIO_AUSENTE')
     manifest_path = root / 'RELEASE-MANIFEST.json'
-    if manifest_path.is_file():
+    if manifest_path.exists() or manifest_path.is_symlink():
         manifest = verify_directory(root)
         return {
             'version': manifest['version'],

@@ -66,10 +66,10 @@ python scripts/qlc-release.py package --output data/release-out
 python scripts/qlc-release.py verify --package data/release-out/qlcstream-0.1.0-rc.1.zip --checksums data/release-out/qlcstream-0.1.0-rc.1.sha256
 ```
 
-- O empacotamento exige árvore Git limpa por padrão (flag `--allow-dirty` existe apenas para ensaios locais antes de commit).
+- O empacotamento exige árvore Git limpa por padrão (flag `--allow-dirty` existe apenas para ensaios locais antes de commit). No modo padrão, os bytes são lidos diretamente dos **blobs canônicos de `HEAD`** (`git ls-tree` + `git cat-file --batch`), garantindo que checkouts limpos com LF ou CRLF gerem ZIP e manifesto com hashes SHA-256 idênticos entre sistemas operacionais.
 - Os arquivos incluídos vêm de uma **lista explícita de permissão**: arquivos operacionais da raiz, `scripts/`, documentação operacional e `docs/releases/<versao>.md`, além dos arquivos de execução de `backend/` e `frontend/` (excluindo `backend/src/test/`, `frontend/src-tauri/` e `frontend/**/*.spec.ts`).
-- São explicitamente recusados: `.git`, `.env`, `data/`, `docs/validation/`, `frontend/src-tauri/`, testes unitários, caches (`target/`, `node_modules/`, `dist/`, `.angular/`, `__pycache__/`), links simbólicos, `.key`, `.pem`, `.dump`, `.db`, `.sqlite*`, `.log` e padrões de segredos (chaves privadas PEM, tokens JWT/Bearer ou valores preenchidos em `.env.example`).
-- O arquivo ZIP usa ordenação determinística, permissões normalizadas e carimbo de data derivado do timestamp UTC do commit, produzindo hashes SHA-256 idênticos em duas gerações consecutivas do mesmo commit.
+- São explicitamente recusados: `.git`, `.env`, `data/`, `docs/validation/`, `frontend/src-tauri/`, testes unitários, caches (`target/`, `node_modules/`, `dist/`, `.angular/`, `__pycache__/`), links simbólicos, `.key`, `.pem`, `.dump`, `.db`, `.sqlite*`, `.log` e padrões de segredos (chaves privadas PEM, tokens JWT/Bearer, credenciais preenchidas em `.env.example` e qualquer `POSTGRES_PASSWORD` diferente de vazio ou do valor público de exemplo `qlc_stream_local`).
+- O arquivo ZIP usa ordenação determinística, permissões normalizadas e carimbo de data derivado do timestamp UTC do commit, produzindo hashes SHA-256 idênticos entre gerações do mesmo commit.
 - São gerados três artefatos públicos sem segredos:
   1. `qlcstream-<versao>.zip` (contendo `RELEASE-MANIFEST.json` na raiz interna);
   2. `qlcstream-<versao>.manifest.json` (manifesto público com versão, canal, esquema, commit, matriz das imagens fixadas, hashes SHA-256 de todos os arquivos e mapa `compatibility`);
@@ -77,25 +77,26 @@ python scripts/qlc-release.py verify --package data/release-out/qlcstream-0.1.0-
 
 ### 3. Compatibilidade do backup em instalações extraídas de pacote (sem `.git`)
 
-`scripts/qlc-backup.py` foi atualizado para identificar a origem sem depender de `.git` nem de `git` instalado:
+`scripts/qlc-backup.py` foi atualizado para identificar a origem sem depender de `.git` nem de `git` instalado, **compartilhando diretamente o validador `verify_directory` de `scripts/qlc-release.py`**:
 
-- Quando `RELEASE-MANIFEST.json` está presente na raiz, o backup valida integralmente o formato do manifesto, os hashes SHA-256 de todos os arquivos declarados em disco, a ausência de links simbólicos e a ausência de arquivos de execução extras não declarados sob `backend/` e `frontend/` (por exemplo, uma migração Flyway extra ou arquivo alterado). Se houver divergência, falha fechada com `MANIFESTO_INVALIDO`.
-- O mapa `compatibility` e o `commit` vêm do manifesto validado (equivalente ao conjunto de execução do checkout Git) e o manifesto privado de backup (formato 1) passa a registrar também `releaseVersion`.
+- Quando `RELEASE-MANIFEST.json` está presente na raiz (ou é link simbólico), o backup delega a validação integral ao `verify_directory` de `scripts/qlc-release.py` (formato, hashes SHA-256 de todos os arquivos, consistência entre manifesto, `VERSION`, `release-metadata.properties`, migrações Flyway, Dockerfiles, matriz do `compose.yaml`, notas de release, ausência de links simbólicos e ausência de arquivos de execução extras sob `backend/` e `frontend/`). Qualquer divergência falha fechada com `MANIFESTO_INVALIDO`, garantindo que `qlc-backup.py` e `qlc-release.py verify-dir` nunca atribuam identidades divergentes à mesma pasta.
+- O mapa `compatibility` e o `commit` vêm do manifesto validado e o manifesto privado de backup (formato 1) passa a registrar também `releaseVersion`.
+- Em checkouts Git, backups antigos já gerados no formato 1 pela implementação anterior (cujo mapa `compatibility` incluía `frontend/src-tauri/` e `frontend/**/*.spec.ts`) continuam sendo verificados e restaurados integralmente por meio do cálculo legado `legacyCompatibility` enviado ao `vault.py`, sem enfraquecer a exigência de correspondência exata.
 - Quando nem `RELEASE-MANIFEST.json` nem `.git` existem, o comando recusa a operação com `ORIGEM_NAO_IDENTIFICADA`.
 
 ### 4. Instalação limpa, atualização administrativa e recuperação
 
 Os passos detalhados constam nas notas da candidata em [docs/releases/0.1.0-rc.1.md](releases/0.1.0-rc.1.md). Resumo dos limites:
 
-- **Instalação limpa:** verificar ZIP + `.sha256` com `qlc-release.py verify`, extrair em pasta nova vazia, confirmar com `qlc-release.py verify-dir` e `inspect`, iniciar com `iniciar-qlcstream.bat` (ou `docker compose up -d --build` após preparar `.env`).
+- **Instalação limpa:** conferir primeiro o SHA-256 do ZIP fora do pacote (`Get-FileHash` no Windows ou `sha256sum -c` no Linux/macOS) contra `.sha256`, extrair em pasta nova vazia, validar a pasta extraída com `python scripts/qlc-release.py verify-dir` e `inspect`, e iniciar com `iniciar-qlcstream.bat` (ou `docker compose up -d --build` após preparar `.env`).
 - **Uso diário:** `iniciar-qlcstream.bat` continua preservando `.env`, contêineres e imagens (`--no-build --no-recreate`), sem atualizar versões implicitamente.
 - **Atualização administrativa:**
   1. Preservar uma cópia da pasta/pacote da versão anterior e dos IDs das imagens locais atuais.
   2. Parar normalmente os escritores (`docker compose stop --timeout 1800 frontend backend prowlarr qbittorrent`).
   3. Executar e verificar backup consistente (`qlc-backup.py backup` + `verify`).
-  4. Verificar o novo pacote e aplicá-lo sobre a pasta extraída com `python scripts/qlc-release.py apply --package <zip> --checksums <sha256> --target <pasta>` (recusa repositórios `.git`, preserva `.env` e `data/`, remove arquivos obsoletos apenas do manifesto anterior e valida a pasta resultante com `verify-dir`).
-  5. Reconstruir explicitamente `backend` e `frontend` com `--build-arg QLCSTREAM_VERSION=... --build-arg QLCSTREAM_COMMIT=...` e recriar somente esses serviços (`docker compose up -d --no-build --force-recreate backend frontend` + `docker compose start prowlarr qbittorrent`).
-  6. Conferir `/actuator/health`, `/api/system/status`, `scripts/check-integration-versions.py` e os dados preservados.
+  4. Verificar o novo pacote e aplicá-lo sobre a pasta extraída com `python scripts/qlc-release.py apply --package <zip> --checksums <sha256> --target <pasta>`: o comando valida integralmente a instalação atual antes de gravar, prepara e valida a nova versão em uma área temporária, preserva `.env` e `data/`, reverte automaticamente qualquer falha durante a substituição mantendo a versão anterior intacta, e informa `integrationsChanged` na saída JSON.
+  5. Reconstruir explicitamente `backend` e `frontend` com `--build-arg QLCSTREAM_VERSION=... --build-arg QLCSTREAM_COMMIT=...`. Quando `integrationsChanged` estiver vazio (matriz inalterada), recriar `backend` e `frontend` e retomar `prowlarr` e `qbittorrent` com `docker compose start`. Se `integrationsChanged` listar serviços com digest alterado, baixar explicitamente com `docker compose pull` e recriar esses serviços (`docker compose up -d --no-build --force-recreate ...`), seguindo [docs/versoes-integracoes.md](versoes-integracoes.md).
+  6. Conferir `/actuator/health`, `/api/system/status`, `scripts/check-integration-versions.py`, IDs das imagens dos contêineres e os dados preservados.
 - **Recuperação após falha:** não usar `flyway repair`, `baseline`, troca de chave ou `down -v`. Restaurar o backup pré-atualização em um destino novo e isolado usando a pasta/pacote **da versão anterior preservada** e as imagens locais anteriores com `qlc-backup.py restore`. Tentar restaurar o backup da versão anterior usando o pacote da versão nova é recusado antes de criar volumes (`VERSAO_ESQUEMA_INCOMPATIVEL`).
 
 ## Validação reproduzível

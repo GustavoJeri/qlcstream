@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -25,6 +26,53 @@ def repack_zip(source_zip, dest_zip, transform):
         entries = [(info, zin.read(info)) for info in zin.infolist()]
         for info, data in transform(entries):
             zout.writestr(info, data)
+
+
+def build_derived_candidate_zip(base_zip, output_dir, next_version, new_prowlarr_digest=None):
+    base_manifest, file_bytes, _ = r.read_and_verify_zip(base_zip)
+    old_version = base_manifest['version']
+    next_files = dict(file_bytes)
+    next_files['VERSION'] = (next_version + '\n').encode('utf-8')
+    meta_path = 'backend/src/main/resources/release-metadata.properties'
+    next_files[meta_path] = next_files[meta_path].decode('utf-8').replace(
+        f'qlcstream.release.version={old_version}',
+        f'qlcstream.release.version={next_version}',
+    ).encode('utf-8')
+    for path in ('backend/Dockerfile', 'frontend/Dockerfile', 'compose.yaml'):
+        next_files[path] = next_files[path].decode('utf-8').replace(old_version, next_version).encode('utf-8')
+    if new_prowlarr_digest:
+        old_ref = base_manifest['integrations']['prowlarr']
+        repo_tag, _, _ = old_ref.partition('@sha256:')
+        next_files['compose.yaml'] = next_files['compose.yaml'].decode('utf-8').replace(
+            old_ref, f'{repo_tag}@sha256:{new_prowlarr_digest}'
+        ).encode('utf-8')
+    old_notes = f'docs/releases/{old_version}.md'
+    next_notes = f'docs/releases/{next_version}.md'
+    next_files[next_notes] = next_files[old_notes].decode('utf-8').replace(old_version, next_version).encode('utf-8')
+    del next_files[old_notes]
+
+    meta = r.validate_release_consistency(next_files)
+    commit = hashlib.sha256((next_version + ':' + base_manifest['commit']).encode()).hexdigest()[:40]
+    files_hashes = {rel: r.sha256_bytes(data) for rel, data in sorted(next_files.items())}
+    compat_hashes = {rel: h for rel, h in files_hashes.items() if r.is_runtime_compatibility_path(rel)}
+    manifest = {
+        'format': 1, 'version': meta['version'], 'channel': meta['channel'], 'schemaVersion': meta['schemaVersion'],
+        'commit': commit, 'commitUtc': base_manifest['commitUtc'], 'workingTree': 'synthetic-candidate',
+        'notes': meta['notes'], 'integrations': meta['integrations'],
+        'files': files_hashes, 'compatibility': compat_hashes, 'excluded': list(r.EXCLUDED_DESCRIPTION),
+    }
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    prefix = f'qlcstream-{next_version}'
+    zip_path = output_dir / f'{prefix}.zip'
+    sums_path = output_dir / f'{prefix}.sha256'
+    manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + '\n').encode('utf-8')
+    with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+        for rel, data in sorted(next_files.items()):
+            archive.writestr(f'{prefix}/{rel}', data)
+        archive.writestr(f'{prefix}/RELEASE-MANIFEST.json', manifest_bytes)
+    sums_path.write_text(f'{r.sha256_file(zip_path)}  {zip_path.name}\n', encoding='utf-8')
+    return zip_path, sums_path, manifest
 
 
 class ReleasePackageTests(unittest.TestCase):
@@ -121,6 +169,20 @@ class ReleasePackageTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, '^SEGREDO_DETECTADO$'):
                 r.verify_package(with_secret)
 
+            # 5. Non-example POSTGRES_PASSWORD in .env.example rejected; empty and example value allowed.
+            with_pg_secret = Path(tmp) / 'with-pg-secret.zip'
+            def add_pg_secret(entries):
+                return [
+                    (info, data.replace(b'POSTGRES_PASSWORD=qlc_stream_local', b'POSTGRES_PASSWORD=private_real_pwd')
+                     if info.filename.endswith('/.env.example') else data)
+                    for info, data in entries
+                ]
+            repack_zip(zip_path, with_pg_secret, add_pg_secret)
+            with self.assertRaisesRegex(ValueError, '^SEGREDO_DETECTADO$'):
+                r.verify_package(with_pg_secret)
+            r.scan_content_for_secrets('.env.example', b'POSTGRES_PASSWORD=\nTMDB_API_TOKEN=\n')
+            r.scan_content_for_secrets('.env.example', b'POSTGRES_PASSWORD=qlc_stream_local\nTMDB_API_TOKEN=\n')
+
     def test_apply_preserves_user_env_and_data_cleans_obsolete_and_refuses_git_target(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / 'build'
@@ -143,7 +205,7 @@ class ReleasePackageTests(unittest.TestCase):
 
             # Simulate an obsolete file from a previous manifest to confirm cleanup without touching user files.
             obsolete_file = target / 'docs/old-obsolete-doc.md'
-            obsolete_file.write_text('old doc\n', encoding='utf-8')
+            obsolete_file.write_bytes(b'old doc\n')
             manifest_path = target / 'RELEASE-MANIFEST.json'
             old_manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
             old_manifest['files']['docs/old-obsolete-doc.md'] = hashlib.sha256(b'old doc\n').hexdigest()
@@ -179,6 +241,78 @@ class ReleasePackageTests(unittest.TestCase):
             with patch.object(r, 'git_run', return_value=b' M README.md\n'):
                 with self.assertRaisesRegex(ValueError, '^ARVORE_SUJA$'):
                     r.collect_release_files(ROOT, allow_dirty=False)
+
+    def test_clean_mode_reads_head_blobs_for_identical_hashes_across_lf_and_crlf_checkouts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            lf_repo = base / 'clone-lf'
+            crlf_repo = base / 'clone-crlf'
+            subprocess.run(['git', 'clone', '--no-hardlinks', '-c', 'core.autocrlf=false', str(ROOT), str(lf_repo)],
+                           check=True, capture_output=True)
+            subprocess.run(['git', 'clone', '--no-hardlinks', '-c', 'core.autocrlf=true', str(ROOT), str(crlf_repo)],
+                           check=True, capture_output=True)
+            # Confirm working trees actually differ in line endings on disk.
+            self.assertNotIn(b'\r\n', (lf_repo / 'README.md').read_bytes())
+            self.assertIn(b'\r\n', (crlf_repo / 'README.md').read_bytes())
+
+            res_lf = r.build_package(lf_repo, base / 'out-lf', allow_dirty=False)
+            res_crlf = r.build_package(crlf_repo, base / 'out-crlf', allow_dirty=False)
+            self.assertEqual(res_lf['workingTree'], 'clean')
+            self.assertEqual(res_crlf['workingTree'], 'clean')
+            self.assertEqual(res_lf['packageSha256'], res_crlf['packageSha256'])
+            self.assertEqual(res_lf['manifestSha256'], res_crlf['manifestSha256'])
+
+    def test_apply_preserves_previous_installation_on_extra_file_mid_failure_and_reports_matrix_changes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            v1_res = r.build_package(ROOT, base / 'v1-out', allow_dirty=True)
+            v1_zip, v1_sums, v1_ver = Path(v1_res['package']), Path(v1_res['checksums']), v1_res['version']
+            v2_zip, v2_sums, _ = build_derived_candidate_zip(v1_zip, base / 'v2-out', '0.1.0-rc.2')
+            v3_zip, v3_sums, _ = build_derived_candidate_zip(
+                v1_zip, base / 'v3-out', '0.1.0-rc.3', new_prowlarr_digest='9' * 64
+            )
+
+            target = base / 'installed'
+            r.apply_package(v1_zip, target, v1_sums)
+            (target / '.env').write_text('TMDB_API_TOKEN=fictional\n', encoding='utf-8')
+            (target / 'data').mkdir()
+            (target / 'data/owned.txt').write_bytes(b'owned-bytes\n')
+            v1_manifest_before = (target / 'RELEASE-MANIFEST.json').read_bytes()
+
+            # Case 1: Extra unmanifested file under frontend/ must fail BEFORE modifying target.
+            extra = target / 'frontend/extra-unexpected.txt'
+            extra.write_text('stray file\n', encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, '^ARQUIVO_EXTRA_NAO_PERMITIDO$'):
+                r.apply_package(v2_zip, target, v2_sums)
+            self.assertEqual((target / 'VERSION').read_text(encoding='utf-8').strip(), v1_ver)
+            self.assertEqual((target / 'RELEASE-MANIFEST.json').read_bytes(), v1_manifest_before)
+            extra.unlink()
+            self.assertEqual(r.inspect_installation(target)['version'], v1_ver)
+
+            # Case 2: Simulated failure midway through file replacement rolls back completely to v1.
+            real_replace = r._replace_file
+            calls = {'count': 0}
+
+            def failing_replace(src, dst):
+                calls['count'] += 1
+                if calls['count'] == 4:
+                    raise OSError('simulated write error')
+                return real_replace(src, dst)
+
+            with patch.object(r, '_replace_file', side_effect=failing_replace):
+                with self.assertRaises(OSError):
+                    r.apply_package(v2_zip, target, v2_sums)
+            self.assertEqual(r.inspect_installation(target)['version'], v1_ver)
+            self.assertEqual((target / 'RELEASE-MANIFEST.json').read_bytes(), v1_manifest_before)
+            self.assertFalse((target / 'docs/releases/0.1.0-rc.2.md').exists())
+            self.assertEqual((target / '.env').read_text(encoding='utf-8'), 'TMDB_API_TOKEN=fictional\n')
+            self.assertEqual((target / 'data/owned.txt').read_bytes(), b'owned-bytes\n')
+
+            # Case 3: Successful upgrades report integrationsChanged accurately.
+            applied_v2 = r.apply_package(v2_zip, target, v2_sums)
+            self.assertEqual(applied_v2['integrationsChanged'], [])
+            applied_v3 = r.apply_package(v3_zip, target, v3_sums)
+            self.assertEqual(applied_v3['integrationsChanged'], ['prowlarr'])
 
     @unittest.skipUnless(os.name == 'posix', 'POSIX symlink rejection contract')
     def test_verify_dir_and_apply_reject_symlinked_root_and_manifest(self):

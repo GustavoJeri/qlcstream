@@ -82,13 +82,18 @@ def validate_key(manifest, key_path):
         raise ValueError('CHAVE_INCORRETA') from None
 
 
-def verify(root, key_root, compatibility, completed=True):
+def verify(root, key_root, compatibility, completed=True, legacy_compatibility=None):
     if completed:
         require((root / 'COMPLETE').is_file(), 'BACKUP_INCOMPLETO')
         require(digest(root / 'manifest.json') == (root / 'COMPLETE').read_text(), 'BACKUP_CORROMPIDO')
     m = json.loads((root / 'manifest.json').read_text())
     require(m['format'] == 1, 'FORMATO_INCOMPATIVEL')
-    require(m['compatibility'] == compatibility, 'VERSAO_ESQUEMA_INCOMPATIVEL')
+    accepted = m['compatibility'] == compatibility or (
+        isinstance(legacy_compatibility, dict)
+        and len(legacy_compatibility) > 0
+        and m['compatibility'] == legacy_compatibility
+    )
+    require(accepted, 'VERSAO_ESQUEMA_INCOMPATIVEL')
     expected = {'database.dump', 'prowlarr.tar', 'qbittorrent.tar', 'media.tar'}
     require(set(m['files']) == expected, 'BACKUP_INCOMPLETO')
     for name, sha in m['files'].items():
@@ -129,7 +134,7 @@ def main(action):
         # Publication is last. Failure leaves an unmistakably incomplete private package.
         (root / 'COMPLETE').write_text(digest(root / 'manifest.json'))
     elif action in ('verify', 'metadata', 'extract', 'dump'):
-        m = verify(root, keys, request['compatibility'])
+        m = verify(root, keys, request['compatibility'], legacy_compatibility=request.get('legacyCompatibility'))
         if action == 'metadata':
             print(json.dumps(m))
         elif action == 'dump':
