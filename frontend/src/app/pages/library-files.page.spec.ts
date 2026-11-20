@@ -50,4 +50,44 @@ describe('Library file actions', () => {
     expect(fixture.componentInstance.seriesFiles().map(file => file.id)).toEqual([3]);
     expect(fixture.componentInstance.items().map(file => file.id)).toEqual([1]);
   });
+  it('requires explicit confirmation before deleting and disables concurrent file deletions', () => {
+    const fixture = page(); fixture.componentInstance.desktop.set(false);
+    const second = { ...item, id: 4, movieTitle: 'Second' };
+    fixture.componentInstance.items.set([item, second]);
+    fixture.detectChanges();
+    const buttons = fixture.nativeElement.querySelectorAll('button.delete-file') as NodeListOf<HTMLButtonElement>;
+    expect(buttons[0].getAttribute('aria-label')).toBe('Excluir arquivo local de Owned');
+
+    vi.stubGlobal('confirm', vi.fn(() => false));
+    fixture.componentInstance.remove(item);
+    TestBed.inject(HttpTestingController).expectNone('/api/library/1');
+    expect(fixture.componentInstance.items()).toHaveLength(2);
+
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    fixture.componentInstance.remove(item);
+    fixture.detectChanges();
+    expect(buttons[0].disabled).toBe(true);
+    expect(buttons[1].disabled).toBe(true);
+    fixture.componentInstance.remove(second);
+    TestBed.inject(HttpTestingController).expectNone('/api/library/4');
+    TestBed.inject(HttpTestingController).expectOne('/api/library/1').flush(null);
+    fixture.detectChanges();
+    expect(fixture.componentInstance.items().map(entry => entry.id)).toEqual([4]);
+  });
+  it('prevents overlapping desktop confirmation dialogs while one is pending', async () => {
+    const fixture = page(); fixture.componentInstance.desktop.set(true);
+    let resolveDialog!: (confirmed: boolean) => void;
+    const confirmSpy = vi.spyOn(TestBed.inject(DesktopFileService), 'confirmDeletion')
+      .mockImplementation(() => new Promise<boolean>((resolve) => { resolveDialog = resolve; }));
+    fixture.componentInstance.remove(item);
+    fixture.detectChanges();
+    expect(fixture.componentInstance.confirmingDeletion()).toBe(true);
+    fixture.componentInstance.remove(item);
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+
+    resolveDialog(false);
+    await Promise.resolve(); await Promise.resolve();
+    expect(fixture.componentInstance.confirmingDeletion()).toBe(false);
+    TestBed.inject(HttpTestingController).expectNone('/api/library/1');
+  });
 });

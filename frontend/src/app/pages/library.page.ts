@@ -444,7 +444,7 @@ interface CollectionSearchResult {
                       <button class="text-action" type="button" (click)="openInVlc(file)" [disabled]="desktopActionId() !== null">Abrir no VLC</button>
                       <button class="text-action" type="button" (click)="revealInFinder(file)" [disabled]="desktopActionId() !== null">Mostrar na pasta</button>
                     }
-                    <button class="text-action" type="button" (click)="remove(file)" [disabled]="deletingId() !== null">Excluir este arquivo</button>
+                    <button class="text-action" type="button" (click)="remove(file)" [disabled]="deletingId() !== null || confirmingDeletion()">Excluir este arquivo</button>
                   </div>
                 }
               </div>
@@ -502,8 +502,9 @@ interface CollectionSearchResult {
                   <button
                     class="icon-button delete-file"
                     type="button"
-                    [disabled]="deletingId() === item.id"
-                    [attr.aria-label]="'Excluir ' + item.movieTitle"
+                    [disabled]="deletingId() !== null || confirmingDeletion()"
+                    [attr.aria-label]="'Excluir arquivo local de ' + item.movieTitle"
+                    title="Excluir somente este arquivo local"
                     (click)="remove(item)"
                   >
                     <i class="ph ph-trash"></i>
@@ -577,6 +578,7 @@ export class LibraryPage {
   readonly errorMessage = signal('Confira a conexão com o backend e tente novamente.');
   readonly actionError = signal('');
   readonly deletingId = signal<number | null>(null);
+  readonly confirmingDeletion = signal(false);
   readonly removingTmdbId = signal<number | null>(null);
   readonly removingSeriesId = signal<number | null>(null);
   readonly desktop = signal(isDesktopApp());
@@ -932,12 +934,17 @@ export class LibraryPage {
       });
   }
   remove(item: LibraryItem | SeriesLibraryItem): void {
-    if (this.deletingId() !== null) return;
+    if (this.deletingId() !== null || this.confirmingDeletion()) return;
     this.actionError.set('');
     if (this.desktop()) {
+      this.confirmingDeletion.set(true);
       this.desktopFile.confirmDeletion(item.relativePath).then((confirmed) => {
+        this.confirmingDeletion.set(false);
         if (confirmed) this.deleteFile(item);
-      }).catch(error => this.actionError.set(this.desktopError(error)));
+      }).catch(error => {
+        this.confirmingDeletion.set(false);
+        this.actionError.set(this.desktopError(error));
+      });
       return;
     }
     if (
@@ -974,6 +981,7 @@ export class LibraryPage {
     return !query || values.some((value) => value.toLocaleLowerCase().includes(query));
   }
   private deleteFile(item: LibraryItem | SeriesLibraryItem): void {
+    if (this.deletingId() !== null) return;
     this.deletingId.set(item.id);
     this.libraryApi
       .remove(item.id)

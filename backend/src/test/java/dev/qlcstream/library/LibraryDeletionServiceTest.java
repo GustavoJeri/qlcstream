@@ -73,4 +73,48 @@ class LibraryDeletionServiceTest {
         assertEquals("DELETED", db.availability);
         verify(controls, times(2)).cancelForFileDeletion(db.download);
     }
+    @Test void missingAvailabilityWithoutPriorAuthorizationIsRefusedWithoutMutatingStateOrEngine() {
+        var db = new Database();
+        db.availability = "MISSING";
+        db.requested = false;
+        var controls = mock(LibraryTransferControl.class);
+        var error = assertThrows(LibraryDeletionService.Failure.class, () -> service(db, controls).delete(1));
+        assertEquals(409, error.status.value());
+        assertTrue(error.getMessage().contains("Nenhuma exclusão foi autorizada"));
+        assertFalse(db.requested);
+        assertEquals("MISSING", db.availability);
+        verifyNoInteractions(controls);
+    }
+    @Test void alreadyDeletedRecordIsIdempotentWithoutTouchingEngine() {
+        var db = new Database();
+        db.availability = "DELETED";
+        var controls = mock(LibraryTransferControl.class);
+        assertDoesNotThrow(() -> service(db, controls).delete(1));
+        verifyNoInteractions(controls);
+    }
+    @Test void unavailableEnginePreservesFileBytesAndAllowsRetry() throws Exception {
+        secureProvider();
+        var file = Files.writeString(root.resolve("owned.mp4"), "owned");
+        var sibling = Files.writeString(root.resolve("other-episode.mp4"), "keep");
+        var db = new Database();
+        var controls = mock(LibraryTransferControl.class);
+        when(controls.cancelForFileDeletion(db.download)).thenThrow(new LibraryTransferControl.Unavailable());
+        var error = assertThrows(LibraryDeletionService.Failure.class, () -> service(db, controls).delete(1));
+        assertEquals(502, error.status.value());
+        assertTrue(error.getMessage().contains("arquivo foi mantido"));
+        assertTrue(db.requested);
+        assertEquals("PRESENT", db.availability);
+        assertEquals("owned", Files.readString(file));
+        assertEquals("keep", Files.readString(sibling));
+    }
+    @Test void explicitDeletionOnAlreadyAbsentFileReconcilesRecordAfterCancelingTransfer() throws Exception {
+        secureProvider();
+        var db = new Database();
+        var controls = mock(LibraryTransferControl.class);
+        when(controls.cancelForFileDeletion(db.download)).thenReturn(true);
+        service(db, controls).delete(1);
+        assertTrue(db.requested);
+        assertEquals("DELETED", db.availability);
+        verify(controls).cancelForFileDeletion(db.download);
+    }
 }

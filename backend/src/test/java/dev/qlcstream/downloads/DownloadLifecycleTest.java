@@ -62,4 +62,56 @@ class DownloadLifecycleTest {
                 DownloadRegressionTest.newRepository(saved), engine, null).submitSeries(DownloadRegressionTest.newSeriesRequest()));
         assertTrue(saved.isEmpty()); assertTrue(engine.commands.isEmpty());
     }
+    @Test void cancelForFileDeletionActivelyRetriesAlreadyCanceledTransferAndLateHash() {
+        var row = DownloadRegressionTest.row();
+        var engine = new DownloadRegressionTest.Engine();
+        var repo = DownloadRegressionTest.repository(row);
+        var service = new DownloadControlService(repo, engine);
+
+        // Initial cancel before hash exists leaves durable CANCELED intent.
+        service.control(row.id(), DownloadControlService.Action.CANCEL);
+        assertEquals("CANCELED", row.status());
+        assertFalse(service.cancelForFileDeletion(row.id()));
+
+        // Late torrent materializes in the reserved folder: file-deletion retry resolves and removes it.
+        engine.snapshots = List.of(DownloadRegressionTest.snapshot("seeding", 1.0, "/downloads/incoming/test"));
+        assertFalse(service.cancelForFileDeletion(row.id()));
+        assertEquals("hash", row.infoHash());
+        assertEquals(List.of("remove:hash"), engine.commands);
+
+        // Retrying while torrent is still in the engine (even with uppercase hex) actively re-sends remove.
+        engine.snapshots = List.of(new QbittorrentClient.TorrentSnapshot("HASH", "seeding", 1.0, 1000, 1000, 0, 0, "/downloads/incoming/test"));
+        assertFalse(service.cancelForFileDeletion(row.id()));
+        assertEquals(List.of("remove:hash", "remove:hash"), engine.commands);
+
+        // Once engine confirms absence, download transitions to REMOVED and authorizes byte deletion.
+        engine.snapshots = List.of();
+        assertTrue(service.cancelForFileDeletion(row.id()));
+        assertEquals("REMOVED", row.status());
+    }
+    @Test void cancelForFileDeletionPreservesBoundHashIfVerificationFailsAfterRemoval() throws Exception {
+        var transactional = DownloadControlService.class
+                .getMethod("cancelForFileDeletion", UUID.class)
+                .getAnnotation(org.springframework.transaction.annotation.Transactional.class);
+        assertNotNull(transactional);
+        assertTrue(Arrays.asList(transactional.noRollbackFor())
+                .contains(QbittorrentClient.QbittorrentUnavailableException.class));
+
+        var row = DownloadRegressionTest.row();
+        row.markStatus("CANCELED");
+        var calls = new int[]{0};
+        var engine = new DownloadRegressionTest.Engine() {
+            @Override public List<TorrentSnapshot> torrents() {
+                if (++calls[0] == 1) return List.of(DownloadRegressionTest.snapshot("seeding", 1.0, "/downloads/incoming/test"));
+                return new QbittorrentClient(
+                        new dev.qlcstream.downloads.config.DownloadQbittorrentProperties("", "", ""), null).torrents();
+            }
+        };
+        var service = new DownloadControlService(DownloadRegressionTest.repository(row), engine);
+        assertThrows(QbittorrentClient.QbittorrentUnavailableException.class,
+                () -> service.cancelForFileDeletion(row.id()));
+        assertEquals("hash", row.infoHash());
+        assertEquals("CANCELED", row.status());
+        assertEquals(List.of("remove:hash"), engine.commands);
+    }
 }

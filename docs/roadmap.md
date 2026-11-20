@@ -63,7 +63,7 @@ Aceite: cada versão publicada informa o que mudou, o que foi testado e como rec
 
 ## F05: experiência diária
 
-- [ ] Distinguir claramente cancelar uma transferência de apagar seus arquivos.
+- [x] Distinguir claramente cancelar uma transferência de apagar seus arquivos (upstream PR #8/#9 e ajustes da Issue #3; origem no fork #23).
 - [ ] Facilitar abrir a pasta e o reprodutor externo.
 - [ ] Melhorar mensagens de falta de fontes, arquivo ausente e download pendente.
 - [ ] Medir os pontos de atrito antes de incluir novas funcionalidades.

@@ -55,14 +55,28 @@ public class DownloadControlService {
         }
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = QbittorrentClient.QbittorrentUnavailableException.class)
     public boolean cancelForFileDeletion(UUID id) {
-        control(id, Action.CANCEL);
-        var download = downloads.findById(id).orElseThrow();
+        var download = downloads.findById(id).orElseThrow(() -> new IllegalArgumentException("Download não encontrado."));
         if ("REMOVED".equals(download.status())) return true;
+        var alreadyCanceled = "CANCELED".equals(download.status());
+        if (!alreadyCanceled) {
+            control(id, Action.CANCEL);
+        }
         var hash = download.infoHash();
-        if (hash == null || hash.isBlank()) return false;
-        if (qbittorrent.torrents().stream().anyMatch(torrent -> hash.equals(torrent.hash()))) return false;
+        if (hash == null || hash.isBlank()) {
+            if (!alreadyCanceled) return false;
+            hash = qbittorrent.hashForSavePath("/downloads/" + download.relativeDirectory());
+            if (hash == null || hash.isBlank()) return false;
+            qbittorrent.remove(hash);
+            download.bindHash(hash);
+            alreadyCanceled = false;
+        }
+        var currentHash = hash;
+        if (qbittorrent.torrents().stream().anyMatch(torrent -> currentHash.equalsIgnoreCase(torrent.hash()))) {
+            if (alreadyCanceled) qbittorrent.remove(currentHash);
+            return false;
+        }
         download.markRemoved();
         return true;
     }

@@ -98,4 +98,31 @@ describe('Downloads queue', () => {
     expect(page.downloads()).toEqual(items);
     expect(page.stale()).toBe(true);
   });
+
+  it('requires confirmation to cancel and explains that pending cancellations preserve local files', async () => {
+    const canceled: DownloadSummary = { ...item, id: '3', status: 'CANCELED', engineState: 'downloading', canRetry: false };
+    const control = vi.fn(() => of(void 0));
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), {
+        provide: DownloadsApiService,
+        useValue: {
+          queue: () => of({ items: [item, canceled], sync: { state: 'available', lastSuccessfulAt, queueingEnabled: true } }),
+          control,
+        },
+      }],
+    });
+    vi.stubGlobal('confirm', vi.fn(() => false));
+    const fixture = TestBed.createComponent(DownloadsPage);
+    await vi.advanceTimersByTimeAsync(0);
+    fixture.detectChanges();
+
+    fixture.componentInstance.control(item, 'cancel');
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Os arquivos já baixados e os arquivos da biblioteca serão mantidos'));
+    expect(control).not.toHaveBeenCalled();
+
+    const cancelButtons = fixture.nativeElement.querySelectorAll('button.danger-action');
+    expect(cancelButtons).toHaveLength(1);
+    expect(fixture.nativeElement.textContent).toContain('Cancelamento pendente');
+    expect(fixture.nativeElement.textContent).toContain('arquivos mantidos');
+  });
 });
