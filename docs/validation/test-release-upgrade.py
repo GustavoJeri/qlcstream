@@ -37,7 +37,7 @@ def next_candidate_version(version):
     return f'{base}-rc.2'
 
 
-def build_synthetic_next_package(base_zip, output_dir, next_version):
+def build_synthetic_next_package(base_zip, output_dir, next_version, new_prowlarr_digest=None):
     """Create a valid synthetic next candidate ZIP from the packaged v1 candidate, preserving V12 schema."""
     base_manifest, file_bytes, _ = r.read_and_verify_zip(base_zip)
     old_version = base_manifest['version']
@@ -51,6 +51,12 @@ def build_synthetic_next_package(base_zip, output_dir, next_version):
     ).encode('utf-8')
     for path in ('backend/Dockerfile', 'frontend/Dockerfile', 'compose.yaml'):
         next_files[path] = next_files[path].decode('utf-8').replace(old_version, next_version).encode('utf-8')
+    if new_prowlarr_digest:
+        old_ref = base_manifest['integrations']['prowlarr']
+        repo_tag, _, _ = old_ref.partition('@sha256:')
+        next_files['compose.yaml'] = next_files['compose.yaml'].decode('utf-8').replace(
+            old_ref, f'{repo_tag}@sha256:{new_prowlarr_digest}'
+        ).encode('utf-8')
 
     old_notes_path = f'docs/releases/{old_version}.md'
     next_notes_path = f'docs/releases/{next_version}.md'
@@ -160,11 +166,25 @@ def assert_packaged_version_checker(network, install_dir):
         'QBITTORRENT_USERNAME': 'fixture',
         'QBITTORRENT_PASSWORD': 'fictional_versions_password',
     }
+    probe = (
+        "import json, subprocess, sys, time\n"
+        "last = ''\n"
+        "for _ in range(60):\n"
+        "  p = subprocess.run([sys.executable, '/pkgscripts/check-integration-versions.py'], capture_output=True, text=True)\n"
+        "  last = p.stdout\n"
+        "  rows = [json.loads(line) for line in p.stdout.splitlines() if line.strip()]\n"
+        "  if p.returncode == 0 and {row['service']: row['status'] for row in rows} == {'prowlarr': 'match', 'qbittorrent': 'match'}:\n"
+        "    print(p.stdout, end='')\n"
+        "    raise SystemExit(0)\n"
+        "  time.sleep(1)\n"
+        "print(last, file=sys.stderr)\n"
+        "raise SystemExit('packaged version checker did not converge')\n"
+    )
     args = ['run', '--rm', '--network', network, '--pull', 'never',
             '-v', str(install_dir / 'scripts') + ':/pkgscripts:ro']
     for k in env:
         args += ['--env', k]
-    out = b.docker(*args, PYTHON, 'python', '/pkgscripts/check-integration-versions.py', environment=env)
+    out = b.docker(*args, PYTHON, 'python', '-c', probe, environment=env)
     rows = [json.loads(line) for line in out.decode('utf-8').splitlines() if line.strip()]
     assert {row['service']: row['status'] for row in rows} == {'prowlarr': 'match', 'qbittorrent': 'match'}, rows
 
@@ -205,15 +225,16 @@ def main():
             raise RuntimeError('Synthetic fixture failed; sensitive output was withheld.')
         return result.stdout
 
-    def write_override(path, backend_image, frontend_image):
-        path.write_text(json.dumps({
-            'services': {
-                'backend': {'image': backend_image},
-                'frontend': {'image': frontend_image, 'depends_on': ['backend']},
-                'source': {'command': ['python', '/fixture/backup-fixture.py', 'serve']},
-                'runner': {'volumes': ['payload:/payload:rw']},
-            }
-        }), encoding='utf-8')
+    def write_override(path, backend_image, frontend_image, prowlarr_image=None):
+        services = {
+            'backend': {'image': backend_image},
+            'frontend': {'image': frontend_image, 'depends_on': ['backend']},
+            'source': {'command': ['python', '/fixture/backup-fixture.py', 'serve']},
+            'runner': {'volumes': ['payload:/payload:rw']},
+        }
+        if prowlarr_image:
+            services['prowlarr'] = {'image': prowlarr_image}
+        path.write_text(json.dumps({'services': services}), encoding='utf-8')
 
     def build_app_images(install_dir, version, commit, tag_suffix):
         be_tag = f'qlcstream-release-{run_id}-backend:{tag_suffix}'
@@ -230,7 +251,9 @@ def main():
 
     override_v1 = scratch / 'override-v1.json'
     override_v2 = scratch / 'override-v2.json'
+    override_v3 = scratch / 'override-v3.json'
     active_override = override_v1
+    created_images = []
 
     try:
         # 1. Build and verify v1 candidate package and synthetic v2 upgrade candidate package.
@@ -342,8 +365,77 @@ def main():
         results.append('restoring v1 backup with v2 package refused before creating target volumes')
         print('PASS: incompatible version restore refused cleanly', flush=True)
 
-        # 6. Controlled upgrade failure on v2 + verified recovery using preserved v1 package & images.
+        # 5b. Single changed integration digest (v2 -> v3, only prowlarr digest changed):
+        # recreate backend, frontend and prowlarr, then explicitly start unchanged qbittorrent and verify both run.
+        prowlarr_before_cid = compose(override_v2, 'ps', '-q', 'prowlarr').decode().strip()
+        prowlarr_before_img = b.inspect('container', prowlarr_before_cid)['Image']
+        qbt_before_cid = compose(override_v2, 'ps', '-q', 'qbittorrent').decode().strip()
+        qbt_before_img = b.inspect('container', qbt_before_cid)['Image']
+
+        prowlarr_v3_dir = scratch / 'prowlarr-v3-image'
+        prowlarr_v3_dir.mkdir(parents=True, exist_ok=True)
+        (prowlarr_v3_dir / 'Dockerfile').write_text(
+            f"FROM {inspected_v2['integrations']['prowlarr']}\n"
+            f"LABEL org.qlcstream.validation.matrix=prowlarr-updated-{run_id}\n",
+            encoding='utf-8',
+        )
+        prowlarr_v3_tag = f'qlcstream-release-{run_id}-prowlarr:v3'
+        b.docker('build', '-t', prowlarr_v3_tag, str(prowlarr_v3_dir))
+        created_images.append(prowlarr_v3_tag)
+        prowlarr_v3_img_id = b.inspect('image', prowlarr_v3_tag)['Id']
+        prowlarr_v3_digest = prowlarr_v3_img_id.split(':', 1)[-1]
+        assert prowlarr_v3_img_id != prowlarr_before_img
+
+        v3_ver = next_candidate_version(v2_ver)
+        v3 = build_synthetic_next_package(
+            v1_zip, scratch / 'packages-v3', v3_ver, new_prowlarr_digest=prowlarr_v3_digest
+        )
+        v3_zip = Path(v3['package'])
+        v3_sums = Path(v3['checksums'])
+        v3_commit = v3['commit']
+
         compose(override_v2, 'stop', '--timeout', '60', 'backend', 'frontend', 'prowlarr', 'qbittorrent', 'source')
+        for svc, cid in (('prowlarr', prowlarr_before_cid), ('qbittorrent', qbt_before_cid)):
+            assert not b.inspect('container', cid)['State']['Running'], f'{svc} should be stopped before apply'
+
+        applied_v3 = json.loads(run_cli(
+            install_active / 'scripts/qlc-release.py', install_active,
+            'apply', '--package', str(v3_zip), '--checksums', str(v3_sums), '--target', str(install_active),
+        ).stdout.decode())
+        assert applied_v3['integrationsChanged'] == ['prowlarr'], applied_v3
+
+        be_v3, fe_v3 = build_app_images(install_active, v3_ver, v3_commit, 'v3')
+        created_images.extend([be_v3, fe_v3])
+        write_override(override_v3, be_v3, fe_v3, prowlarr_image=prowlarr_v3_tag)
+        active_override = override_v3
+
+        changed_integrations = applied_v3['integrationsChanged']
+        unchanged_integrations = [svc for svc in ('prowlarr', 'qbittorrent') if svc not in changed_integrations]
+        assert unchanged_integrations == ['qbittorrent']
+        compose(override_v3, 'up', '-d', '--no-build', '--pull', 'never', '--force-recreate',
+                'backend', 'frontend', *changed_integrations)
+        # Confirm unchanged integration remained stopped until explicitly resumed per runbook.
+        assert not b.inspect('container', qbt_before_cid)['State']['Running'], 'unchanged qbittorrent was unexpectedly running'
+        compose(override_v3, 'start', *unchanged_integrations, 'source')
+
+        prowlarr_after_cid = compose(override_v3, 'ps', '-q', 'prowlarr').decode().strip()
+        prowlarr_after = b.inspect('container', prowlarr_after_cid)
+        qbt_after_cid = compose(override_v3, 'ps', '-q', 'qbittorrent').decode().strip()
+        qbt_after = b.inspect('container', qbt_after_cid)
+        assert prowlarr_after['State']['Running'], 'recreated prowlarr is not running'
+        assert qbt_after['State']['Running'], 'resumed qbittorrent is not running'
+        assert prowlarr_after_cid != prowlarr_before_cid, 'prowlarr container was not recreated'
+        assert prowlarr_after['Image'] == prowlarr_v3_img_id, 'prowlarr did not switch to updated image'
+        assert qbt_after_cid == qbt_before_cid and qbt_after['Image'] == qbt_before_img, 'unchanged qbittorrent was recreated unexpectedly'
+
+        assert_status_identity(compose_network, v3_ver, 'candidate', v1_schema, v3_commit)
+        assert_packaged_version_checker(compose_network, install_active)
+        run_fixture(override_v3, 'check-media')
+        results.append(f'single-digest upgrade {v2_ver} -> {v3_ver} recreated prowlarr and resumed unchanged qbittorrent; both integrations healthy')
+        print('PASS: single changed integration digest recreated prowlarr and resumed qbittorrent', flush=True)
+
+        # 6. Controlled upgrade failure on v3 + verified recovery using preserved v1 package & images.
+        compose(override_v3, 'stop', '--timeout', '60', 'backend', 'frontend', 'prowlarr', 'qbittorrent', 'source')
         b.sql(db, "DELETE FROM local_file; DELETE FROM movie WHERE tmdb_id = 313131;")
 
         recovery_target = base + '-recovered'
@@ -375,6 +467,7 @@ def main():
             'runId': run_id,
             'v1': {'version': v1_ver, 'schemaVersion': v1_schema, 'packageSha256': v1['packageSha256']},
             'v2Synthetic': {'version': v2_ver, 'schemaVersion': v1_schema},
+            'v3SingleDigestSynthetic': {'version': v3_ver, 'schemaVersion': v1_schema, 'integrationsChanged': ['prowlarr']},
             'checks': results,
         }
         (scratch / 'result.json').write_text(json.dumps(evidence, indent=2) + '\n', encoding='utf-8')
@@ -387,6 +480,8 @@ def main():
             b.docker('rm', name, allow_failure=True)
         for net in created_networks:
             b.docker('network', 'rm', net, allow_failure=True)
+        for img in created_images:
+            b.docker('rmi', '-f', img, allow_failure=True)
         print('Synthetic volumes retained: ' + base, flush=True)
 
 

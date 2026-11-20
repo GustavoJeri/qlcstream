@@ -156,6 +156,7 @@ def scan_content_for_secrets(rel_posix, raw_bytes):
             key, sep, value = stripped.partition('=')
             if not sep:
                 continue
+            key = key.strip()
             cleaned = value.strip()
             if key in ('TMDB_API_TOKEN', 'PROWLARR_API_KEY', 'QBITTORRENT_PASSWORD'):
                 require(cleaned == '', 'SEGREDO_DETECTADO')
@@ -234,14 +235,14 @@ def validate_release_consistency(file_bytes_map):
     require(props.get('qlcstream.release.schema-version') == schema_version, 'ESQUEMA_DIVERGENTE')
 
     # Dockerfiles and compose default build args must agree with VERSION.
-    for path, pattern in (
-        ('backend/Dockerfile', rf'ARG QLCSTREAM_VERSION={re.escape(version)}\b'),
-        ('frontend/Dockerfile', rf'ARG QLCSTREAM_VERSION={re.escape(version)}\b'),
-        ('compose.yaml', rf'QLCSTREAM_VERSION:\s*\$\{{QLCSTREAM_VERSION:-{re.escape(version)}\}}'),
+    for path, pattern, expected_count in (
+        ('backend/Dockerfile', rf'ARG QLCSTREAM_VERSION={re.escape(version)}\b', 1),
+        ('frontend/Dockerfile', rf'ARG QLCSTREAM_VERSION={re.escape(version)}\b', 1),
+        ('compose.yaml', rf'QLCSTREAM_VERSION:\s*\$\{{QLCSTREAM_VERSION:-{re.escape(version)}\}}', 2),
     ):
         require(path in file_bytes_map, 'ARQUIVO_OBRIGATORIO_AUSENTE')
         text = file_bytes_map[path].decode('utf-8')
-        require(re.search(pattern, text) is not None, 'VERSAO_DIVERGENTE')
+        require(len(re.findall(pattern, text)) == expected_count, 'VERSAO_DIVERGENTE')
 
     notes_path = f'docs/releases/{version}.md'
     require(notes_path in file_bytes_map, 'NOTAS_RELEASE_AUSENTES')
@@ -625,6 +626,12 @@ def verify_directory(target_dir):
     return manifest
 
 
+class IncompleteRollbackError(RuntimeError):
+    def __init__(self, backup_dir, message):
+        super().__init__(message)
+        self.backup_dir = Path(backup_dir)
+
+
 def _replace_file(src_path, dst_path):
     dst_path.parent.mkdir(parents=True, exist_ok=True)
     os.replace(src_path, dst_path)
@@ -678,6 +685,8 @@ def apply_package(zip_path, target_dir, checksums_path=None):
             raise ValueError('LINK_NAO_SUPORTADO')
         if dest.exists():
             require(dest.is_file(), 'DIRETORIO_INVALIDO')
+            if rel not in old_files:
+                raise ValueError('COLISAO_ARQUIVO_LOCAL')
         current = dest.parent
         while current != target:
             require(not current.is_symlink(), 'LINK_NAO_SUPORTADO')
@@ -704,6 +713,7 @@ def apply_package(zip_path, target_dir, checksums_path=None):
     backed_up = []
     created_files = []
     created_target_dir = False
+    keep_backup_dir = False
 
     try:
         for rel, content in sorted(file_bytes.items()):
@@ -756,27 +766,49 @@ def apply_package(zip_path, target_dir, checksums_path=None):
                 created_files.append('RELEASE-MANIFEST.json')
 
             verify_directory(target)
-        except Exception:
+        except Exception as apply_error:
+            rollback_errors = []
             # Roll back target to its exact pre-apply state without touching .env or data/.
             for rel in reversed(created_files):
                 added = target / rel
-                if added.is_file() and not added.is_symlink():
-                    added.unlink()
-                    _prune_empty_parents(added, target)
+                try:
+                    if added.is_file() and not added.is_symlink():
+                        added.unlink()
+                        _prune_empty_parents(added, target)
+                except Exception as rb_error:
+                    rollback_errors.append(f'{rel}: {rb_error}')
             for rel, bkp in backed_up:
                 dest = target / rel
-                if bkp.is_file():
+                try:
+                    if not bkp.is_file():
+                        raise FileNotFoundError(str(bkp))
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(bkp, dest)
-            if created_target_dir and target.is_dir():
+                except Exception as rb_error:
+                    rollback_errors.append(f'{rel}: {rb_error}')
+            if not rollback_errors and old_manifest is not None:
+                try:
+                    verify_directory(target)
+                except Exception as rb_error:
+                    rollback_errors.append(f'verify: {rb_error}')
+            if not rollback_errors and created_target_dir and target.is_dir():
                 try:
                     target.rmdir()
                 except OSError:
                     pass
+            if rollback_errors:
+                if backed_up:
+                    keep_backup_dir = True
+                    raise IncompleteRollbackError(
+                        backup_dir,
+                        f'REVERSAO_INCOMPLETA: copia preservada em {backup_dir}',
+                    ) from apply_error
+                raise ValueError('REVERSAO_INCOMPLETA') from apply_error
             raise
     finally:
         shutil.rmtree(stage_dir, ignore_errors=True)
-        shutil.rmtree(backup_dir, ignore_errors=True)
+        if not keep_backup_dir:
+            shutil.rmtree(backup_dir, ignore_errors=True)
 
     integrations_changed = []
     if old_manifest is not None:
@@ -913,6 +945,9 @@ if __name__ == '__main__':
     sys.stderr.reconfigure(encoding='utf-8')
     try:
         main()
+    except IncompleteRollbackError as error:
+        print(f'REVERSAO_INCOMPLETA: copia preservada em {error.backup_dir} — consulte docs/versoes-atualizacao.md.', file=sys.stderr)
+        sys.exit(1)
     except Exception as error:
         code = str(error) if isinstance(error, ValueError) and str(error).replace('_', '').isupper() else 'OPERACAO_FALHOU'
         print(code + ': consulte docs/versoes-atualizacao.md.', file=sys.stderr)

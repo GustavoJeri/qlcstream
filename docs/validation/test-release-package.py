@@ -182,6 +182,17 @@ class ReleasePackageTests(unittest.TestCase):
                 r.verify_package(with_pg_secret)
             r.scan_content_for_secrets('.env.example', b'POSTGRES_PASSWORD=\nTMDB_API_TOKEN=\n')
             r.scan_content_for_secrets('.env.example', b'POSTGRES_PASSWORD=qlc_stream_local\nTMDB_API_TOKEN=\n')
+            with self.assertRaisesRegex(ValueError, '^SEGREDO_DETECTADO$'):
+                r.scan_content_for_secrets('.env.example', b'POSTGRES_PASSWORD = private_real_pwd\n')
+
+            # 6. Half-bumped compose.yaml (only backend updated, frontend still on old version) rejected.
+            _, valid_files, _ = r.read_and_verify_zip(zip_path)
+            half_bumped = dict(valid_files)
+            half_bumped['compose.yaml'] = half_bumped['compose.yaml'].decode('utf-8').replace(
+                f'QLCSTREAM_VERSION:-{version}', 'QLCSTREAM_VERSION:-0.0.9', 1
+            ).encode('utf-8')
+            with self.assertRaisesRegex(ValueError, '^VERSAO_DIVERGENTE$'):
+                r.validate_release_consistency(half_bumped)
 
     def test_apply_preserves_user_env_and_data_cleans_obsolete_and_refuses_git_target(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -308,7 +319,56 @@ class ReleasePackageTests(unittest.TestCase):
             self.assertEqual((target / '.env').read_text(encoding='utf-8'), 'TMDB_API_TOKEN=fictional\n')
             self.assertEqual((target / 'data/owned.txt').read_bytes(), b'owned-bytes\n')
 
-            # Case 3: Successful upgrades report integrationsChanged accurately.
+            # Case 3: Local file outside old_files colliding with a new package file is refused before writing.
+            colliding_note = target / 'docs/releases/0.1.0-rc.2.md'
+            colliding_note.write_text('local operator notes — do not overwrite\n', encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, '^COLISAO_ARQUIVO_LOCAL$'):
+                r.apply_package(v2_zip, target, v2_sums)
+            self.assertEqual(colliding_note.read_text(encoding='utf-8'), 'local operator notes — do not overwrite\n')
+            self.assertEqual((target / 'VERSION').read_text(encoding='utf-8').strip(), v1_ver)
+            self.assertEqual((target / 'RELEASE-MANIFEST.json').read_bytes(), v1_manifest_before)
+            self.assertEqual(r.inspect_installation(target)['version'], v1_ver)
+            colliding_note.unlink()
+
+            # Case 4: Failure during apply followed by failure during rollback preserves the rollback copy and reports its path.
+            calls = {'replace': 0, 'restore': 0}
+            real_copy2 = shutil.copy2
+
+            def failing_replace_double(src, dst):
+                calls['replace'] += 1
+                if calls['replace'] == 4:
+                    raise OSError('simulated apply failure')
+                return real_replace(src, dst)
+
+            def failing_restore_copy2(src, dst, *args, **kwargs):
+                # Allow initial backup copies into .qlcstream-rollback-*; fail when restoring back into target.
+                if '.qlcstream-rollback-' in str(src):
+                    calls['restore'] += 1
+                    if calls['restore'] == 2:
+                        raise OSError('simulated rollback failure')
+                return real_copy2(src, dst, *args, **kwargs)
+
+            with patch.object(r, '_replace_file', side_effect=failing_replace_double), \
+                    patch.object(r.shutil, 'copy2', side_effect=failing_restore_copy2):
+                with self.assertRaises(r.IncompleteRollbackError) as ctx:
+                    r.apply_package(v2_zip, target, v2_sums)
+            err = ctx.exception
+            self.assertIn('REVERSAO_INCOMPLETA', str(err))
+            self.assertIn(str(err.backup_dir), str(err))
+            self.assertTrue(err.backup_dir.is_dir(), 'rollback directory must be preserved when restore fails')
+            self.assertEqual((err.backup_dir / 'VERSION').read_text(encoding='utf-8').strip(), v1_ver)
+            self.assertEqual((err.backup_dir / 'RELEASE-MANIFEST.json').read_bytes(), v1_manifest_before)
+            # Clean up target back to v1 using the preserved rollback copy and confirm recovery succeeds.
+            for item in err.backup_dir.rglob('*'):
+                if item.is_file():
+                    rel = item.relative_to(err.backup_dir)
+                    dst = target / rel
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    real_copy2(item, dst)
+            shutil.rmtree(err.backup_dir)
+            self.assertEqual(r.inspect_installation(target)['version'], v1_ver)
+
+            # Case 5: Successful upgrades report integrationsChanged accurately.
             applied_v2 = r.apply_package(v2_zip, target, v2_sums)
             self.assertEqual(applied_v2['integrationsChanged'], [])
             applied_v3 = r.apply_package(v3_zip, target, v3_sums)
