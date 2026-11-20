@@ -741,14 +741,17 @@ def apply_package(zip_path, target_dir, checksums_path=None):
                 shutil.copy2(src, bkp)
                 backed_up.append((rel, bkp))
 
-        # Apply staged files atomically per file; roll back completely on any error.
+        # Preserve the rollback copy before the first mutation; remove it only after
+        # either the upgrade or a complete rollback passes verify_directory(target).
+        keep_backup_dir = bool(backed_up)
+
+        # Apply staged files atomically per file; roll back completely on any error or interrupt.
         try:
             for rel in sorted(file_bytes):
                 dest = target / rel
-                existed = dest.exists()
-                _replace_file(stage_dir / rel, dest)
-                if not existed:
+                if not dest.exists():
                     created_files.append(rel)
+                _replace_file(stage_dir / rel, dest)
 
             for rel in obsolete:
                 top = PurePosixPath(rel).parts[0]
@@ -760,50 +763,61 @@ def apply_package(zip_path, target_dir, checksums_path=None):
                     _prune_empty_parents(old_path, target)
 
             require(not old_manifest_path.is_symlink(), 'LINK_NAO_SUPORTADO')
-            existed_manifest = old_manifest_path.exists()
-            _replace_file(stage_dir / 'RELEASE-MANIFEST.json', old_manifest_path)
-            if not existed_manifest:
+            if not old_manifest_path.exists():
                 created_files.append('RELEASE-MANIFEST.json')
+            _replace_file(stage_dir / 'RELEASE-MANIFEST.json', old_manifest_path)
 
             verify_directory(target)
-        except Exception as apply_error:
+            keep_backup_dir = False
+        except BaseException as apply_error:
             rollback_errors = []
+            rollback_interrupted = None
             # Roll back target to its exact pre-apply state without touching .env or data/.
-            for rel in reversed(created_files):
-                added = target / rel
-                try:
-                    if added.is_file() and not added.is_symlink():
-                        added.unlink()
-                        _prune_empty_parents(added, target)
-                except Exception as rb_error:
-                    rollback_errors.append(f'{rel}: {rb_error}')
-            for rel, bkp in backed_up:
-                dest = target / rel
-                try:
-                    if not bkp.is_file():
-                        raise FileNotFoundError(str(bkp))
-                    dest.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(bkp, dest)
-                except Exception as rb_error:
-                    rollback_errors.append(f'{rel}: {rb_error}')
-            if not rollback_errors and old_manifest is not None:
-                try:
-                    verify_directory(target)
-                except Exception as rb_error:
-                    rollback_errors.append(f'verify: {rb_error}')
-            if not rollback_errors and created_target_dir and target.is_dir():
-                try:
-                    target.rmdir()
-                except OSError:
-                    pass
+            try:
+                for rel in reversed(created_files):
+                    added = target / rel
+                    try:
+                        if added.is_file() and not added.is_symlink():
+                            added.unlink()
+                            _prune_empty_parents(added, target)
+                    except Exception as rb_error:
+                        rollback_errors.append(f'{rel}: {rb_error}')
+                for rel, bkp in backed_up:
+                    dest = target / rel
+                    try:
+                        if not bkp.is_file():
+                            raise FileNotFoundError(str(bkp))
+                        dest.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(bkp, dest)
+                    except Exception as rb_error:
+                        rollback_errors.append(f'{rel}: {rb_error}')
+                if not rollback_errors and old_manifest is not None:
+                    try:
+                        verify_directory(target)
+                    except Exception as rb_error:
+                        rollback_errors.append(f'verify: {rb_error}')
+                if not rollback_errors and created_target_dir and target.is_dir():
+                    try:
+                        target.rmdir()
+                    except OSError:
+                        pass
+            except BaseException as rb_interrupt:
+                rollback_interrupted = rb_interrupt
+                rollback_errors.append(f'interrupted: {type(rb_interrupt).__name__}')
+
             if rollback_errors:
                 if backed_up:
                     keep_backup_dir = True
+                    cause = rollback_interrupted if rollback_interrupted is not None else apply_error
                     raise IncompleteRollbackError(
                         backup_dir,
                         f'REVERSAO_INCOMPLETA: copia preservada em {backup_dir}',
-                    ) from apply_error
+                    ) from cause
+                if rollback_interrupted is not None:
+                    raise rollback_interrupted
                 raise ValueError('REVERSAO_INCOMPLETA') from apply_error
+
+            keep_backup_dir = False
             raise
     finally:
         shutil.rmtree(stage_dir, ignore_errors=True)
@@ -948,6 +962,9 @@ if __name__ == '__main__':
     except IncompleteRollbackError as error:
         print(f'REVERSAO_INCOMPLETA: copia preservada em {error.backup_dir} — consulte docs/versoes-atualizacao.md.', file=sys.stderr)
         sys.exit(1)
+    except KeyboardInterrupt:
+        print('OPERACAO_INTERROMPIDA: instalacao anterior preservada; consulte docs/versoes-atualizacao.md.', file=sys.stderr)
+        sys.exit(130)
     except Exception as error:
         code = str(error) if isinstance(error, ValueError) and str(error).replace('_', '').isupper() else 'OPERACAO_FALHOU'
         print(code + ': consulte docs/versoes-atualizacao.md.', file=sys.stderr)

@@ -368,7 +368,63 @@ class ReleasePackageTests(unittest.TestCase):
             shutil.rmtree(err.backup_dir)
             self.assertEqual(r.inspect_installation(target)['version'], v1_ver)
 
-            # Case 5: Successful upgrades report integrationsChanged accurately.
+            # Case 5: KeyboardInterrupt after replacing VERSION rolls back cleanly to v1 and cleans rollback dir only after verification.
+            replaced_version = {'done': False}
+
+            def interrupt_after_version(src, dst):
+                if replaced_version['done']:
+                    raise KeyboardInterrupt()
+                real_replace(src, dst)
+                if Path(dst).name == 'VERSION':
+                    replaced_version['done'] = True
+
+            with patch.object(r, '_replace_file', side_effect=interrupt_after_version):
+                with self.assertRaises(KeyboardInterrupt):
+                    r.apply_package(v2_zip, target, v2_sums)
+            self.assertEqual((target / 'VERSION').read_text(encoding='utf-8').strip(), v1_ver)
+            self.assertEqual((target / 'RELEASE-MANIFEST.json').read_bytes(), v1_manifest_before)
+            self.assertEqual(r.inspect_installation(target)['version'], v1_ver)
+            self.assertEqual(list(base.glob('.qlcstream-rollback-*')), [])
+
+            # Case 6: KeyboardInterrupt after replacing VERSION followed by KeyboardInterrupt during rollback preserves backup_dir.
+            replaced_version_2 = {'done': False}
+            restore_interrupt_calls = {'count': 0}
+
+            def interrupt_after_version_2(src, dst):
+                if replaced_version_2['done']:
+                    raise KeyboardInterrupt()
+                real_replace(src, dst)
+                if Path(dst).name == 'VERSION':
+                    replaced_version_2['done'] = True
+
+            def interrupt_during_restore(src, dst, *args, **kwargs):
+                if '.qlcstream-rollback-' in str(src):
+                    restore_interrupt_calls['count'] += 1
+                    if restore_interrupt_calls['count'] == 2:
+                        raise KeyboardInterrupt()
+                return real_copy2(src, dst, *args, **kwargs)
+
+            with patch.object(r, '_replace_file', side_effect=interrupt_after_version_2), \
+                    patch.object(r.shutil, 'copy2', side_effect=interrupt_during_restore):
+                with self.assertRaises(r.IncompleteRollbackError) as int_ctx:
+                    r.apply_package(v2_zip, target, v2_sums)
+            int_err = int_ctx.exception
+            self.assertIn('REVERSAO_INCOMPLETA', str(int_err))
+            self.assertIn(str(int_err.backup_dir), str(int_err))
+            self.assertTrue(int_err.backup_dir.is_dir(), 'rollback directory must be preserved when rollback is interrupted')
+            self.assertEqual((int_err.backup_dir / 'VERSION').read_text(encoding='utf-8').strip(), v1_ver)
+            self.assertEqual((int_err.backup_dir / 'RELEASE-MANIFEST.json').read_bytes(), v1_manifest_before)
+            # Recover target from preserved rollback directory and confirm v1 passes verify-dir.
+            for item in int_err.backup_dir.rglob('*'):
+                if item.is_file():
+                    rel = item.relative_to(int_err.backup_dir)
+                    dst = target / rel
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    real_copy2(item, dst)
+            shutil.rmtree(int_err.backup_dir)
+            self.assertEqual(r.inspect_installation(target)['version'], v1_ver)
+
+            # Case 7: Successful upgrades report integrationsChanged accurately.
             applied_v2 = r.apply_package(v2_zip, target, v2_sums)
             self.assertEqual(applied_v2['integrationsChanged'], [])
             applied_v3 = r.apply_package(v3_zip, target, v3_sums)
